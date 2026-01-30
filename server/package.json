@@ -1,0 +1,23 @@
+{
+  "name": "@stashu/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.8.0",
+    "better-sqlite3": "^11.0.0",
+    "@cashu/cashu-ts": "^2.0.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.3.0",
+    "tsx": "^4.7.0"
+  }
+}
