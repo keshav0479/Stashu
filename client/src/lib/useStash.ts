@@ -1,9 +1,5 @@
 import { useState, useCallback } from 'react';
-import {
-  encryptFile,
-  readFileAsArrayBuffer,
-  toBase64,
-} from './crypto';
+import { encryptFile, readFileAsArrayBuffer, toBase64 } from './crypto';
 import { uploadToBlossom } from './blossom';
 import { connectWallet, encryptToPublicKey, hasNostrExtension } from './nostr';
 import { createStash } from './api';
@@ -104,7 +100,6 @@ export function useStash() {
           keyBackup = await encryptToPublicKey(state.pubkey, secretKey);
         } catch {
           // Key backup is optional - continue without it
-          console.warn('Could not create key backup');
         }
 
         // Step 3: Upload to Blossom
