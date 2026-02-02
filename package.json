@@ -26,11 +26,7 @@
     "node": ">=18.0.0"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "prettier --write",
-      "eslint --fix"
-    ],
-    "*.{json,css,md}": [
+    "*.{ts,tsx,js,jsx,json,css,md}": [
       "prettier --write"
     ]
   }
