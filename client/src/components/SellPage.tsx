@@ -15,6 +15,7 @@ export function SellPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [priceError, setPriceError] = useState<string | null>(null);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -30,9 +31,10 @@ export function SellPage() {
 
     const priceSats = parseInt(price, 10);
     if (isNaN(priceSats) || priceSats <= 0) {
-      // TODO: Show error to user
+      setPriceError('Please enter a valid price (must be greater than 0)');
       return;
     }
+    setPriceError(null);
 
     await stash.createStash(selectedFile, {
       title,
@@ -99,6 +101,7 @@ export function SellPage() {
 
           <button
             onClick={() => {
+              navigator.clipboard.writeText(stash.shareUrl!);
               alert('Link copied!');
             }}
             className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
@@ -182,6 +185,7 @@ export function SellPage() {
                        rounded-xl text-white placeholder-slate-500
                        focus:outline-none focus:border-orange-500"
             />
+            {priceError && <p className="mt-2 text-red-400 text-sm">{priceError}</p>}
           </div>
         </div>
 

@@ -48,9 +48,7 @@ export async function connectWallet(): Promise<{ pubkey: string }> {
     const pubkey = await window.nostr!.getPublicKey();
     return { pubkey };
   } catch (error) {
-    throw new Error(
-      error instanceof Error ? error.message : 'Failed to connect wallet'
-    );
+    throw new Error(error instanceof Error ? error.message : 'Failed to connect wallet');
   }
 }
 
@@ -69,9 +67,7 @@ export async function signEvent(event: EventTemplate): Promise<Event> {
     };
     return await window.nostr!.signEvent(unsignedEvent);
   } catch (error) {
-    throw new Error(
-      error instanceof Error ? error.message : 'Failed to sign event'
-    );
+    throw new Error(error instanceof Error ? error.message : 'Failed to sign event');
   }
 }
 
@@ -124,7 +120,6 @@ export async function encryptToPublicKey(
 
   // Fallback to NIP-04 (less secure but more widely supported)
   if (window.nostr!.nip04) {
-    console.warn('Using NIP-04 fallback. NIP-44 recommended for security.');
     return window.nostr!.nip04.encrypt(recipientPubkey, plaintext);
   }
 
