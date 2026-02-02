@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.1.1",
+    "@noble/hashes": "^2.0.1",
+    "nostr-tools": "^2.22.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
