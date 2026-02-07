@@ -2,44 +2,122 @@
   <img src="client/src/assets/logo.png" alt="Stashu Logo" width="120">
   <h1>Stashu</h1>
   <p>
-    <strong>Trust-Minimized Digital Asset Exchange Protocol</strong>
+    <strong>The Blind Vending Machine for the Sovereign Web</strong>
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/Protocol-Nostr%20(NIP--98)-purple" alt="Nostr">
-    <img src="https://img.shields.io/badge/Payment-Cashu%20(NIP--60)-orange" alt="Cashu">
+    <img src="https://img.shields.io/badge/Storage-Blossom-purple" alt="Blossom">
+    <img src="https://img.shields.io/badge/Payment-Cashu-orange" alt="Cashu">
+    <img src="https://img.shields.io/badge/Encryption-NIP--44-blue" alt="NIP-44">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   </p>
 </div>
 
 ---
 
-## Overview
+## What is Stashu?
 
-**Stashu** is a decentralized application designed to facilitate the private exchange of digital files for e-cash. It eliminates the need for trusted intermediaries by leveraging cryptographic proofs and distributed storage protocols.
+Stashu is a trust-minimized protocol for selling digital files for Bitcoin. No accounts, no KYC, no intermediaries.
 
-The system functions as a trust-minimized "Atomic Exchange":
+**How it works:**
 
-1.  **Storage:** Files are encrypted client-side and stored on **Blossom Servers (NIP-98)**.
-2.  **Payments:** Transactions are settled using **Cashu (NIP-60)** blind signatures, ensuring payer privacy.
-3.  **Exchange:** The decryption key is cryptographically locked and released only upon verification of a valid Cashu token proof.
+1. Seller uploads file → encrypted client-side → stored on Blossom
+2. Seller sets price in sats → gets shareable link
+3. Buyer pays with Cashu token → receives decryption key
+4. Buyer downloads and decrypts → done
 
-## Architecture
+## Quick Start
 
-Stashu integrates three distinct protocols to ensure privacy and data sovereignty:
+```bash
+git clone https://github.com/keshav0479/Stashu.git
+cd Stashu
+npm install
+npm run dev
+```
 
-| Component         | Standard             | Function                                                                                              |
-| :---------------- | :------------------- | :---------------------------------------------------------------------------------------------------- |
-| **Storage Layer** | **NIP-98 (Blossom)** | HTTP Authentication using Nostr events for authenticated file uploads.                                |
-| **Encryption**    | **NIP-44**           | XChaCha20-Poly1305 encryption. Keys are generated client-side and never exposed to storage providers. |
-| **Settlement**    | **NIP-60 (Cashu)**   | Chaumian E-Cash integration for blind, instant, and effectively zero-fee payments.                    |
+- Client: http://localhost:5173
+- Server: http://localhost:3000
 
-## Features
+## Tech Stack
 
-- **Client-Side Encryption:** All file encryption occurs in the browser. The storage provider hosts only opaque binary blobs.
-- **Blind Atomic Swaps:** The payment server verifies the validity of the e-cash token before releasing the decryption key, preventing double-spending without tracking user identity.
-- **No Accounts Required:** Authentication is handled via public/private key pairs (Nostr), removing the need for email or password databases.
+| Layer      | Technology                           |
+| ---------- | ------------------------------------ |
+| Frontend   | React, Vite, TypeScript, TailwindCSS |
+| Backend    | Hono, TypeScript                     |
+| Database   | SQLite (better-sqlite3)              |
+| Storage    | Blossom (BUD-02)                     |
+| Encryption | XChaCha20-Poly1305 (NIP-44)          |
+| Payment    | Cashu                                |
+| Auth       | NIP-07 (Nostr)                       |
 
-## 📦 Installation & Setup
+## Roadmap
 
-_(Currently in active development)_
+### Phase 1: Project Setup
+
+- [x] Monorepo structure (client, server, shared)
+- [x] Vite + React + TypeScript frontend
+- [x] TailwindCSS with custom design system
+- [x] Hono backend with TypeScript
+- [x] SQLite database setup
+- [x] Shared types package
+
+### Phase 2: Seller Flow
+
+- [x] NIP-07 wallet connection (Alby, nos2x)
+- [x] Drag-and-drop file upload
+- [x] Client-side XChaCha20-Poly1305 encryption
+- [x] Key backup to seller pubkey
+- [x] Blossom upload with auth
+- [x] Stash creation API
+- [x] Shareable link generation
+
+### Phase 3: Buyer Flow
+
+- [x] Buyer preview page
+- [x] Cashu token paste interface
+- [x] Token verification and swap
+- [x] Idempotent payment processing
+- [x] Decryption key release
+- [x] Client-side decryption and download
+
+### Phase 4: Database
+
+- [x] Stashes table schema
+- [x] Payments table schema
+- [x] Earnings API endpoint
+- [x] Database indexes
+
+### Phase 5: UX Improvements
+
+- [ ] Backup button (prevent fund loss)
+- [ ] Seller dashboard
+- [ ] Toast notifications
+- [ ] Fee estimation before withdrawal
+- [ ] Lightning invoice option
+- [ ] OG meta tags for sharing
+
+### Phase 6: Payment Flexibility
+
+- [ ] Multiple Cashu mints
+- [ ] WebLN integration
+- [ ] Nostr Wallet Connect
+- [ ] Split payments (revenue share)
+- [ ] Auto-melt to Lightning address
+
+### Phase 7: Polish
+
+- [ ] Smart file previews
+- [ ] Environment variables
+- [ ] Production CORS
+- [ ] Rate limiting
+- [ ] Error pages
+
+### Phase 8: Discoverability
+
+- [ ] Nostr event publishing
+- [ ] NSFW content flagging
+- [ ] Agent API
+
+## License
+
+MIT
