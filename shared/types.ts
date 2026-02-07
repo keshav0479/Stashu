@@ -90,3 +90,18 @@ export interface EarningsResponse {
   tokens: string[];
   totalSats: number;
 }
+
+export interface SellerStashStats {
+  id: string;
+  title: string;
+  priceSats: number;
+  unlockCount: number;
+  totalEarned: number;
+  createdAt: number;
+}
+
+// GET /api/dashboard/:pubkey
+export interface DashboardResponse {
+  stashes: SellerStashStats[];
+  earnings: EarningsResponse;
+}

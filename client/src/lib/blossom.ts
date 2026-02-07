@@ -6,7 +6,7 @@
 import { createBlossomAuthEvent } from './nostr';
 import { sha256 } from './crypto';
 
-const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net';
+const DEFAULT_BLOSSOM_SERVER = import.meta.env.VITE_BLOSSOM_URL || 'https://blossom.primal.net';
 
 export interface BlossomUploadResult {
   url: string;

@@ -9,16 +9,15 @@ import type {
   StashPublicInfo,
   UnlockRequest,
   UnlockResponse,
+  DashboardResponse,
 } from '../../../shared/types';
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 /**
  * Create a new stash on the backend
  */
-export async function createStash(
-  request: CreateStashRequest
-): Promise<CreateStashResponse> {
+export async function createStash(request: CreateStashRequest): Promise<CreateStashResponse> {
   const response = await fetch(`${API_BASE}/stash`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -51,10 +50,7 @@ export async function getStashInfo(id: string): Promise<StashPublicInfo> {
 /**
  * Unlock a stash with a Cashu token
  */
-export async function unlockStash(
-  id: string,
-  token: string
-): Promise<UnlockResponse> {
+export async function unlockStash(id: string, token: string): Promise<UnlockResponse> {
   const response = await fetch(`${API_BASE}/unlock/${id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,6 +58,17 @@ export async function unlockStash(
   });
 
   const result: APIResponse<UnlockResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+export async function getDashboard(pubkey: string): Promise<DashboardResponse> {
+  const response = await fetch(`${API_BASE}/dashboard/${pubkey}`);
+  const result: APIResponse<DashboardResponse> = await response.json();
 
   if (!result.success) {
     throw new Error(result.error);

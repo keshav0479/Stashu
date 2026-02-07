@@ -63,7 +63,7 @@ npm run dev
 
 ### Phase 2: Seller Flow
 
-- [x] NIP-07 wallet connection (Alby, nos2x)
+- [x] Local keypair with recovery token
 - [x] Drag-and-drop file upload
 - [x] Client-side XChaCha20-Poly1305 encryption
 - [x] Key backup to seller pubkey
@@ -89,11 +89,11 @@ npm run dev
 
 ### Phase 5: UX Improvements
 
-- [ ] Backup button (prevent fund loss)
-- [ ] Seller dashboard
-- [ ] Toast notifications
+- [x] Recovery token modal (prevent fund loss)
+- [x] Seller dashboard with earnings display
+- [x] Toast notifications
+- [ ] One-click Lightning withdrawal
 - [ ] Fee estimation before withdrawal
-- [ ] Lightning invoice option
 - [ ] OG meta tags for sharing
 
 ### Phase 6: Payment Flexibility
@@ -107,8 +107,8 @@ npm run dev
 ### Phase 7: Polish
 
 - [ ] Smart file previews
-- [ ] Environment variables
-- [ ] Production CORS
+- [x] Environment variables (API, CORS, Blossom)
+- [x] Production CORS configuration
 - [ ] Rate limiting
 - [ ] Error pages
 
