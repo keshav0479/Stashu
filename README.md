@@ -48,7 +48,7 @@ npm run dev
 | Storage    | Blossom (BUD-02)                     |
 | Encryption | XChaCha20-Poly1305 (NIP-44)          |
 | Payment    | Cashu                                |
-| Auth       | NIP-07 (Nostr)                       |
+| Identity   | Local keypair with recovery token    |
 
 ## Roadmap
 
@@ -92,27 +92,37 @@ npm run dev
 - [x] Recovery token modal (prevent fund loss)
 - [x] Seller dashboard with earnings display
 - [x] Toast notifications
-- [ ] One-click Lightning withdrawal
-- [ ] Fee estimation before withdrawal
-- [ ] OG meta tags for sharing
+- [ ] Dashboard link on homepage
+- [ ] Restore account page (`/restore`)
+- [ ] Hide nsec by default (reveal toggle)
+- [ ] Settings page (`/settings`)
+- [ ] "How it Works" section on homepage
 
-### Phase 6: Payment Flexibility
+### Phase 6: Lightning Withdrawal
+
+- [ ] One-click Lightning withdrawal
+- [ ] Lightning address input
+- [ ] Token aggregation server-side
+- [ ] Fee estimation display
+- [ ] Mark tokens as claimed
+
+### Phase 7: Payment Flexibility
 
 - [ ] Multiple Cashu mints
 - [ ] WebLN integration
 - [ ] Nostr Wallet Connect
 - [ ] Split payments (revenue share)
-- [ ] Auto-melt to Lightning address
 
-### Phase 7: Polish
+### Phase 8: Polish
 
 - [ ] Smart file previews
 - [x] Environment variables (API, CORS, Blossom)
 - [x] Production CORS configuration
+- [ ] OG meta tags for link previews
 - [ ] Rate limiting
-- [ ] Error pages
+- [ ] 404 error page
 
-### Phase 8: Discoverability
+### Phase 9: Discoverability
 
 - [ ] Nostr event publishing
 - [ ] NSFW content flagging
