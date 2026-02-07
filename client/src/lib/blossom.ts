@@ -3,10 +3,10 @@
  * Uploads encrypted files to a Blossom server with NIP-98 authentication
  */
 
-import { createNIP98AuthEvent } from './nostr';
+import { createBlossomAuthEvent } from './nostr';
 import { sha256 } from './crypto';
 
-const DEFAULT_BLOSSOM_SERVER = 'https://blossom.nostr.build';
+const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net';
 
 export interface BlossomUploadResult {
   url: string;
@@ -28,18 +28,18 @@ export async function uploadToBlossom(
 ): Promise<BlossomUploadResult> {
   const uploadUrl = `${server}/upload`;
 
-  // Compute SHA-256 hash for NIP-98 payload verification
+  // Compute SHA-256 hash for Blossom auth
   const dataHash = await sha256(data);
 
-  // Create NIP-98 auth event
-  const authEvent = await createNIP98AuthEvent(uploadUrl, 'POST', dataHash);
+  // Create Blossom Authorization event (kind 24242)
+  const authEvent = await createBlossomAuthEvent(uploadUrl, dataHash);
 
   // Encode auth event as base64 for Authorization header
   const authHeader = `Nostr ${btoa(JSON.stringify(authEvent))}`;
 
   // Upload the file
   const response = await fetch(uploadUrl, {
-    method: 'POST',
+    method: 'PUT',
     headers: {
       Authorization: authHeader,
       'Content-Type': contentType,

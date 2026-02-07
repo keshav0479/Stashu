@@ -21,6 +21,7 @@ db.exec(`
     price_sats INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
+    file_name TEXT NOT NULL DEFAULT 'file',
     file_size INTEGER NOT NULL,
     preview_url TEXT,
     created_at INTEGER DEFAULT (unixepoch())

@@ -36,3 +36,6 @@ coverage/
 
 # Misc
 *.local
+*.db-shm
+*.db-wal
+*.db-journal

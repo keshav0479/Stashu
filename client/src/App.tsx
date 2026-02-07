@@ -1,5 +1,6 @@
-import logo from './assets/logo.png'
-import './index.css'
+import { Link } from 'react-router-dom';
+import logo from './assets/logo.png';
+import './index.css';
 
 function App() {
   return (
@@ -7,18 +8,25 @@ function App() {
       {/* Logo and Title */}
       <div className="text-center mb-16 relative z-10">
         <div className="w-40 h-40 mx-auto mb-6 logo-float drop-shadow-2xl">
-          <img src={logo} alt="Stashu Squirrel" className="w-full h-full object-contain filter drop-shadow-lg" />
+          <img
+            src={logo}
+            alt="Stashu Squirrel"
+            className="w-full h-full object-contain filter drop-shadow-lg"
+          />
         </div>
-        
+
         <div className="inline-block mb-3 px-4 py-1.5 rounded-full border border-(--color-border) bg-(--color-bg-glass) backdrop-blur-md">
-          <span className="text-xs font-medium text-(--color-accent-primary) tracking-wider uppercase">V 1.0 • Alpha</span>
+          <span className="text-xs font-medium text-(--color-accent-primary) tracking-wider uppercase">
+            V 1.0 • Alpha
+          </span>
         </div>
 
         <h1 className="text-6xl md:text-7xl font-bold text-white mb-6 tracking-tight">
           Stash<span className="text-(--color-accent-primary)">u</span>
         </h1>
         <p className="text-xl text-(--color-text-secondary) max-w-lg mx-auto leading-relaxed font-light">
-          The <span className="text-(--color-text-primary) font-medium">blind vending machine</span> for the sovereign web.
+          The <span className="text-(--color-text-primary) font-medium">blind vending machine</span>{' '}
+          for the sovereign web.
         </p>
       </div>
 
@@ -33,9 +41,9 @@ function App() {
           <p className="text-(--color-text-secondary) text-base mb-8 leading-relaxed">
             Upload your asset, set a price in sats, and get a shareable link.
           </p>
-          <button className="btn-primary w-full shadow-orange-500/20">
+          <Link to="/sell" className="btn-primary w-full shadow-orange-500/20 block text-center">
             Connect Wallet
-          </button>
+          </Link>
         </div>
 
         {/* Buyer Card */}
@@ -47,19 +55,22 @@ function App() {
           <p className="text-(--color-text-secondary) text-base mb-8 leading-relaxed">
             Paste a Cashu token to instantly decrypt and download content.
           </p>
-          <button className="btn-secondary w-full shadow-indigo-500/20">
+          <Link
+            to="/s/demo"
+            className="btn-secondary w-full shadow-indigo-500/20 block text-center"
+          >
             Have a Link?
-          </button>
+          </Link>
         </div>
       </div>
-      
+
       {/* Footer */}
       <footer className="mt-16 text-center text-sm text-(--color-text-secondary) relative z-10">
         <p className="mb-2">Powered by Blossom • Cashu • NIP-44</p>
         <p className="opacity-50">No accounts. No tracking. Just files and sats.</p>
       </footer>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

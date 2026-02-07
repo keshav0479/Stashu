@@ -72,30 +72,29 @@ export async function signEvent(event: EventTemplate): Promise<Event> {
 }
 
 /**
- * Create a NIP-98 HTTP Auth event for Blossom upload
- * @param url The URL being accessed
- * @param method HTTP method (GET, POST, etc.)
- * @param sha256hash Optional SHA-256 hash of the request body
+ * Create a Blossom Authorization event for file upload
+ * @param url The URL being accessed (for content only)
+ * @param sha256hash SHA-256 hash of the file being uploaded
  */
-export async function createNIP98AuthEvent(
-  url: string,
-  method: string,
-  sha256hash?: string
-): Promise<Event> {
+export async function createBlossomAuthEvent(url: string, sha256hash: string): Promise<Event> {
+  // Calculate expiration (5 minutes from now)
+  const expiration = Math.floor(Date.now() / 1000) + 300;
+
   const tags: string[][] = [
-    ['u', url],
-    ['method', method],
+    ['t', 'upload'], // Required: action type
+    ['expiration', String(expiration)],
   ];
 
+  // Add 'x' tag with SHA-256 hash (required for upload per BUD-02)
   if (sha256hash) {
-    tags.push(['payload', sha256hash]);
+    tags.push(['x', sha256hash]);
   }
 
   const event: EventTemplate = {
-    kind: 27235, // NIP-98 HTTP Auth
+    kind: 24242,
     created_at: Math.floor(Date.now() / 1000),
     tags,
-    content: '',
+    content: `Upload to ${url}`,
   };
 
   return signEvent(event);

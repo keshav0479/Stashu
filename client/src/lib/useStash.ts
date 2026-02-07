@@ -116,6 +116,7 @@ export function useStash() {
           priceSats: options.priceSats,
           title: options.title,
           description: options.description,
+          fileName: file.name,
           fileSize: file.size,
         });
 

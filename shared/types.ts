@@ -3,9 +3,7 @@
 // ============================================
 
 // Generic API response wrapper for consistent error handling
-export type APIResponse<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
+export type APIResponse<T> = { success: true; data: T } | { success: false; error: string };
 
 // ============================================
 // Stash Types
@@ -20,6 +18,7 @@ export interface Stash {
   priceSats: number;
   title: string;
   description?: string;
+  fileName: string;
   fileSize: number;
   previewUrl?: string;
   createdAt: number;
@@ -30,6 +29,7 @@ export interface StashPublicInfo {
   id: string;
   title: string;
   description?: string;
+  fileName: string;
   fileSize: number;
   priceSats: number;
   previewUrl?: string;
@@ -64,6 +64,7 @@ export interface CreateStashRequest {
   priceSats: number;
   title: string;
   description?: string;
+  fileName: string;
   fileSize: number;
   previewUrl?: string;
 }
@@ -81,6 +82,7 @@ export interface UnlockRequest {
 export interface UnlockResponse {
   secretKey: string;
   blobUrl: string;
+  fileName: string;
 }
 
 // GET /api/earnings (for seller dashboard)

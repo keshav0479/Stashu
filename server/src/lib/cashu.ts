@@ -1,4 +1,4 @@
-import { CashuMint, CashuWallet, getDecodedToken } from '@cashu/cashu-ts';
+import { CashuMint, CashuWallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
 
 // Minibits Cashu Mint
 const MINT_URL = 'https://mint.minibits.cash/Bitcoin';
@@ -8,8 +8,9 @@ let wallet: CashuWallet | null = null;
 async function getWallet(): Promise<CashuWallet> {
   if (!wallet) {
     const mint = new CashuMint(MINT_URL);
-    const keys = await mint.getKeys();
-    wallet = new CashuWallet(mint, { keys });
+    wallet = new CashuWallet(mint);
+    // Load keys from mint
+    await wallet.loadMint();
   }
   return wallet;
 }
@@ -18,6 +19,21 @@ export interface SwapResult {
   success: boolean;
   sellerToken?: string;
   error?: string;
+}
+
+/**
+ * Extract proofs from a decoded token (handles both v0 and v1 formats)
+ */
+function getProofsFromToken(decoded: any): Array<{ amount: number }> {
+  // v1 format: { mint, proofs, unit, memo }
+  if (decoded.proofs && Array.isArray(decoded.proofs)) {
+    return decoded.proofs;
+  }
+  // v0 format: { token: [{ mint, proofs }] }
+  if (decoded.token && Array.isArray(decoded.token)) {
+    return decoded.token.flatMap((t: any) => t.proofs || []);
+  }
+  return [];
 }
 
 /**
@@ -33,42 +49,37 @@ export async function verifyAndSwapToken(
   try {
     // Decode the token
     const decoded = getDecodedToken(tokenString);
-    
+
     // Calculate total value
-    const totalValue = decoded.token
-      .flatMap((t: { proofs: Array<{ amount: number }> }) => t.proofs)
-      .reduce((sum: number, proof: { amount: number }) => sum + proof.amount, 0);
+    const proofs = getProofsFromToken(decoded);
+    const totalValue = proofs.reduce((sum, proof) => sum + proof.amount, 0);
 
     if (totalValue < expectedSats) {
       return {
         success: false,
-        error: `Insufficient token value: ${totalValue} sats, expected ${expectedSats} sats`
+        error: `Insufficient token value: ${totalValue} sats, expected ${expectedSats} sats`,
       };
     }
-
-    // Get all proofs from the token
-    const proofs = decoded.token.flatMap(t => t.proofs);
 
     // Get wallet and swap proofs for new ones
     const w = await getWallet();
     const newProofs = await w.receive(tokenString);
 
-    // Encode the new proofs as a token for the seller
-    const sellerToken = w.getEncodedToken({
+    // Encode the new proofs as a token for the seller (v4 format)
+    const sellerToken = getEncodedTokenV4({
       mint: MINT_URL,
-      proofs: newProofs
+      proofs: newProofs,
     });
 
     return {
       success: true,
-      sellerToken
+      sellerToken,
     };
-
   } catch (error) {
     console.error('Cashu swap error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Token swap failed'
+      error: error instanceof Error ? error.message : 'Token swap failed',
     };
   }
 }
@@ -79,9 +90,8 @@ export async function verifyAndSwapToken(
 export function getTokenValue(tokenString: string): number {
   try {
     const decoded = getDecodedToken(tokenString);
-    return decoded.token
-      .flatMap((t: { proofs: Array<{ amount: number }> }) => t.proofs)
-      .reduce((sum: number, proof: { amount: number }) => sum + proof.amount, 0);
+    const proofs = getProofsFromToken(decoded);
+    return proofs.reduce((sum, proof) => sum + proof.amount, 0);
   } catch {
     return 0;
   }
