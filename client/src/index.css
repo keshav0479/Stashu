@@ -201,3 +201,37 @@ h4,
     transform: translateY(-10px);
   }
 }
+
+@keyframes toastPopIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastPopOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.95);
+  }
+}
+
+.toast-enter {
+  animation: toastPopIn 0.35s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
+}
+
+.toast-exit {
+  animation: toastPopOut 0.25s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
+}

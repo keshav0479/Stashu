@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { FileUploader } from './FileUploader';
+import { RecoveryTokenModal } from './RecoveryTokenModal';
+import { useToast } from './Toast';
 import { useStash } from '../lib/useStash';
+import { hasAcknowledgedRecovery, getOrCreateIdentity } from '../lib/identity';
 
 interface FileInfo {
   name: string;
@@ -10,12 +13,17 @@ interface FileInfo {
 
 export function SellPage() {
   const stash = useStash();
+  const toast = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(() => {
+    getOrCreateIdentity();
+    return !hasAcknowledgedRecovery();
+  });
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -49,47 +57,8 @@ export function SellPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Not connected state
-  if (!stash.isConnected) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="max-w-md w-full text-center">
-          <h1 className="text-3xl font-bold text-white mb-4">Connect Wallet</h1>
-          <p className="text-slate-400 mb-8">Connect your Nostr wallet to start selling files</p>
-
-          {!stash.hasExtension ? (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-              <p className="text-red-400">
-                No Nostr extension found. Install{' '}
-                <a
-                  href="https://chromewebstore.google.com/detail/alby-bitcoin-wallet-for-l/iokeahhehimjnekafflcihljlcjccdbe"
-                  className="underline"
-                >
-                  Alby
-                </a>{' '}
-                or{' '}
-                <a
-                  href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgmejjdanjjp"
-                  className="underline"
-                >
-                  nos2x
-                </a>
-              </p>
-            </div>
-          ) : (
-            <button
-              onClick={() => stash.connect()}
-              disabled={stash.status === 'connecting'}
-              className="w-full py-4 px-6 bg-orange-500 hover:bg-orange-600 
-                       text-white font-semibold rounded-xl transition-colors
-                       disabled:opacity-50"
-            >
-              {stash.status === 'connecting' ? 'Connecting...' : 'Connect Wallet'}
-            </button>
-          )}
-        </div>
-      </div>
-    );
+  if (showRecoveryModal) {
+    return <RecoveryTokenModal onComplete={() => setShowRecoveryModal(false)} />;
   }
 
   // Success state
@@ -108,7 +77,7 @@ export function SellPage() {
           <button
             onClick={() => {
               navigator.clipboard.writeText(stash.shareUrl!);
-              alert('Link copied!');
+              toast.showToast('Link copied!', 'success');
             }}
             className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
                      text-white font-semibold rounded-xl transition-colors"
@@ -118,7 +87,7 @@ export function SellPage() {
 
           <button
             onClick={() => stash.reset()}
-            className="block w-full mt-4 py-3 px-6 border border-slate-600 
+            className="block w-full mt-6 py-3 px-6 border border-slate-600 
                      text-slate-300 rounded-xl hover:bg-slate-800 transition-colors"
           >
             Create Another Stash

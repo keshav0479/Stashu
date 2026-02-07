@@ -1,23 +1,16 @@
 import { useState, useCallback } from 'react';
 import { encryptFile, readFileAsArrayBuffer, toBase64 } from './crypto';
 import { uploadToBlossom } from './blossom';
-import { connectWallet, encryptToPublicKey, hasNostrExtension } from './nostr';
+import { getPublicKey, encryptToSelf } from './nostr';
 import { createStash } from './api';
+import { hasIdentity, hasAcknowledgedRecovery } from './identity';
 
-export type StashStatus =
-  | 'idle'
-  | 'connecting'
-  | 'encrypting'
-  | 'uploading'
-  | 'creating'
-  | 'done'
-  | 'error';
+export type StashStatus = 'idle' | 'encrypting' | 'uploading' | 'creating' | 'done' | 'error';
 
 export interface StashState {
   status: StashStatus;
-  progress: number; // 0-100
+  progress: number;
   error: string | null;
-  pubkey: string | null;
   shareUrl: string | null;
 }
 
@@ -32,121 +25,73 @@ export function useStash() {
     status: 'idle',
     progress: 0,
     error: null,
-    pubkey: null,
     shareUrl: null,
   });
 
   const reset = useCallback(() => {
-    setState({
-      status: 'idle',
-      progress: 0,
-      error: null,
-      pubkey: null,
-      shareUrl: null,
-    });
+    setState({ status: 'idle', progress: 0, error: null, shareUrl: null });
   }, []);
 
-  const connect = useCallback(async () => {
-    if (!hasNostrExtension()) {
-      setState((s) => ({
-        ...s,
-        status: 'error',
-        error: 'No Nostr extension found. Install Alby or nos2x.',
-      }));
-      return false;
-    }
-
-    setState((s) => ({ ...s, status: 'connecting', progress: 10 }));
+  const createStashFromFile = useCallback(async (file: File, options: StashOptions) => {
+    const pubkey = getPublicKey();
 
     try {
-      const { pubkey } = await connectWallet();
-      setState((s) => ({ ...s, pubkey, status: 'idle', progress: 0 }));
-      return true;
+      setState((s) => ({ ...s, status: 'encrypting', progress: 20 }));
+      const fileData = await readFileAsArrayBuffer(file);
+      const { ciphertext, nonce, key } = await encryptFile(fileData);
+      const secretKey = `${toBase64(nonce)}:${toBase64(key)}`;
+
+      setState((s) => ({ ...s, progress: 40 }));
+      let keyBackup: string | undefined;
+      try {
+        keyBackup = encryptToSelf(secretKey);
+      } catch {
+        // Optional
+      }
+
+      setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
+      const uploadResult = await uploadToBlossom(ciphertext, file.type);
+
+      setState((s) => ({ ...s, status: 'creating', progress: 80 }));
+      const stashResult = await createStash({
+        blobUrl: uploadResult.url,
+        secretKey,
+        keyBackup,
+        sellerPubkey: pubkey,
+        priceSats: options.priceSats,
+        title: options.title,
+        description: options.description,
+        fileName: file.name,
+        fileSize: file.size,
+      });
+
+      const shareUrl = `${window.location.origin}/s/${stashResult.id}`;
+      setState((s) => ({ ...s, status: 'done', progress: 100, shareUrl }));
+
+      try {
+        localStorage.setItem('stashu_pubkey', pubkey);
+        const existingStashes = JSON.parse(localStorage.getItem('stashu_stashes') || '[]');
+        const newStash = { id: stashResult.id, title: options.title, createdAt: Date.now() };
+        localStorage.setItem('stashu_stashes', JSON.stringify([...existingStashes, newStash]));
+      } catch (e) {
+        console.error('Failed to save to localStorage', e);
+      }
+
+      return shareUrl;
     } catch (error) {
       setState((s) => ({
         ...s,
         status: 'error',
-        error: error instanceof Error ? error.message : 'Connection failed',
+        error: error instanceof Error ? error.message : 'Upload failed',
       }));
-      return false;
+      return null;
     }
   }, []);
 
-  const createStashFromFile = useCallback(
-    async (file: File, options: StashOptions) => {
-      if (!state.pubkey) {
-        setState((s) => ({
-          ...s,
-          status: 'error',
-          error: 'Wallet not connected',
-        }));
-        return null;
-      }
-
-      try {
-        // Step 1: Encrypt the file with XChaCha20-Poly1305
-        setState((s) => ({ ...s, status: 'encrypting', progress: 20 }));
-        const fileData = await readFileAsArrayBuffer(file);
-        const { ciphertext, nonce, key } = await encryptFile(fileData);
-
-        // Create secret key string: nonce + key in base64
-        // This allows buyer to decrypt with just one string
-        const secretKey = `${toBase64(nonce)}:${toBase64(key)}`;
-
-        // Step 2: Encrypt key backup to seller's pubkey
-        setState((s) => ({ ...s, progress: 40 }));
-        let keyBackup: string | undefined;
-        try {
-          keyBackup = await encryptToPublicKey(state.pubkey, secretKey);
-        } catch {
-          // Key backup is optional - continue without it
-        }
-
-        // Step 3: Upload to Blossom
-        setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
-        const uploadResult = await uploadToBlossom(ciphertext, file.type);
-
-        // Step 4: Create stash on backend
-        setState((s) => ({ ...s, status: 'creating', progress: 80 }));
-        const stashResult = await createStash({
-          blobUrl: uploadResult.url,
-          secretKey,
-          keyBackup,
-          sellerPubkey: state.pubkey,
-          priceSats: options.priceSats,
-          title: options.title,
-          description: options.description,
-          fileName: file.name,
-          fileSize: file.size,
-        });
-
-        // Done!
-        const shareUrl = `${window.location.origin}/s/${stashResult.id}`;
-        setState((s) => ({
-          ...s,
-          status: 'done',
-          progress: 100,
-          shareUrl,
-        }));
-
-        return shareUrl;
-      } catch (error) {
-        setState((s) => ({
-          ...s,
-          status: 'error',
-          error: error instanceof Error ? error.message : 'Upload failed',
-        }));
-        return null;
-      }
-    },
-    [state.pubkey]
-  );
-
   return {
     ...state,
-    isConnected: !!state.pubkey,
-    hasExtension: hasNostrExtension(),
-    connect,
+    isReady: hasIdentity() && hasAcknowledgedRecovery(),
+    needsRecoveryAck: hasIdentity() && !hasAcknowledgedRecovery(),
     createStash: createStashFromFile,
     reset,
   };
