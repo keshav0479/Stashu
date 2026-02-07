@@ -61,11 +61,17 @@ export function SellPage() {
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
               <p className="text-red-400">
                 No Nostr extension found. Install{' '}
-                <a href="https://getalby.com" className="underline">
+                <a
+                  href="https://chromewebstore.google.com/detail/alby-bitcoin-wallet-for-l/iokeahhehimjnekafflcihljlcjccdbe"
+                  className="underline"
+                >
                   Alby
                 </a>{' '}
                 or{' '}
-                <a href="https://github.com/nickmattis/nos2x" className="underline">
+                <a
+                  href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgmejjdanjjp"
+                  className="underline"
+                >
                   nos2x
                 </a>
               </p>
