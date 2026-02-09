@@ -4,6 +4,7 @@ import { RecoveryTokenModal } from './RecoveryTokenModal';
 import { useToast } from './Toast';
 import { useStash } from '../lib/useStash';
 import { hasAcknowledgedRecovery, getOrCreateIdentity } from '../lib/identity';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface FileInfo {
   name: string;
@@ -75,9 +76,13 @@ export function SellPage() {
           </div>
 
           <button
-            onClick={() => {
-              navigator.clipboard.writeText(stash.shareUrl!);
-              toast.showToast('Link copied!', 'success');
+            onClick={async () => {
+              const success = await copyToClipboard(stash.shareUrl!);
+              if (success) {
+                toast.showToast('Link copied!', 'success');
+              } else {
+                toast.showToast('Failed to copy link', 'error');
+              }
             }}
             className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
                      text-white font-semibold rounded-xl transition-colors"

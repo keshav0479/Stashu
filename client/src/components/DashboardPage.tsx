@@ -4,6 +4,7 @@ import { BarChart3, XCircle, Copy, Lightbulb, Package, Squirrel } from 'lucide-r
 import { getDashboard } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
+import { copyToClipboard } from '../lib/clipboard';
 import type { DashboardResponse, SellerStashStats } from '../../../shared/types';
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-identity';
@@ -45,12 +46,13 @@ export function DashboardPage() {
   const copyAllTokens = async () => {
     if (!data?.earnings.tokens.length) return;
 
-    try {
-      // Join all tokens with newlines for easy pasting
-      const allTokens = data.earnings.tokens.join('\n\n');
-      await navigator.clipboard.writeText(allTokens);
+    // Join all tokens with newlines for easy pasting
+    const allTokens = data.earnings.tokens.join('\n\n');
+    const success = await copyToClipboard(allTokens);
+
+    if (success) {
       toast.showToast(`Copied ${data.earnings.tokens.length} token(s)!`, 'success');
-    } catch {
+    } else {
       toast.showToast('Failed to copy tokens', 'error');
     }
   };
@@ -128,7 +130,7 @@ export function DashboardPage() {
     <div className="min-h-screen bg-slate-900 py-12 px-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4 sm:gap-0">
           <div>
             <Link
               to="/"
@@ -140,7 +142,7 @@ export function DashboardPage() {
           </div>
           <Link
             to="/sell"
-            className="py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
+            className="w-full sm:w-auto text-center py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
           >
             + New Stash
           </Link>
@@ -148,8 +150,8 @@ export function DashboardPage() {
 
         {/* Earnings Card */}
         <div className="bg-linear-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/30 rounded-2xl p-8 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 sm:gap-0">
+            <div className="text-center sm:text-left w-full sm:w-auto">
               <p className="text-orange-300 text-sm font-medium mb-1">Total Earnings</p>
               <p className="text-4xl font-bold text-white">
                 {data?.earnings.totalSats.toLocaleString() || 0}{' '}
@@ -165,7 +167,7 @@ export function DashboardPage() {
             {hasEarnings && (
               <button
                 onClick={copyAllTokens}
-                className="py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
+                className="w-full sm:w-auto py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 <Copy className="w-4 h-4" />
                 Copy All Tokens
@@ -177,8 +179,8 @@ export function DashboardPage() {
           {hasEarnings && (
             <div className="mt-6 bg-slate-900/50 rounded-xl p-4 border border-slate-700">
               <p className="text-slate-300 text-sm">
-                <Lightbulb className="w-4 h-4 text-amber-400 shrink-0" /> <strong>Tip:</strong> To
-                convert to Lightning, paste tokens in{' '}
+                <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 inline mr-2" />
+                <strong>Tip:</strong> To convert to Lightning, paste tokens in{' '}
                 <a
                   href="https://nutstash.app"
                   target="_blank"
@@ -226,34 +228,42 @@ export function DashboardPage() {
                   key={stash.id}
                   className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 hover:border-slate-600 transition-colors"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-white mb-1">{stash.title}</h3>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex-1 w-full sm:w-auto">
+                      <h3 className="text-lg font-semibold text-white mb-1 truncate">
+                        {stash.title}
+                      </h3>
                       <p className="text-slate-500 text-sm">
-                        Created {formatDate(stash.createdAt)} • {stash.priceSats} sats per unlock
+                        Created {formatDate(stash.createdAt)} • {stash.priceSats} sats
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-white">{stash.unlockCount}</p>
-                        <p className="text-slate-500 text-xs">Unlocks</p>
-                      </div>
+                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t border-slate-700/50 pt-4 sm:pt-0 sm:border-0">
+                      <div className="flex gap-6">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-white">{stash.unlockCount}</p>
+                          <p className="text-slate-500 text-xs">Unlocks</p>
+                        </div>
 
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-orange-400">
-                          {stash.totalEarned.toLocaleString()}
-                        </p>
-                        <p className="text-slate-500 text-xs">Sats earned</p>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-orange-400">
+                            {stash.totalEarned.toLocaleString()}
+                          </p>
+                          <p className="text-slate-500 text-xs">Sats earned</p>
+                        </div>
                       </div>
 
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const url = `${window.location.origin}/s/${stash.id}`;
-                          navigator.clipboard.writeText(url);
-                          toast.showToast('Link copied!', 'success');
+                          const success = await copyToClipboard(url);
+                          if (success) {
+                            toast.showToast('Link copied!', 'success');
+                          } else {
+                            toast.showToast('Failed to copy link', 'error');
+                          }
                         }}
-                        className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors text-sm"
+                        className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors text-sm whitespace-nowrap"
                       >
                         Copy Link
                       </button>

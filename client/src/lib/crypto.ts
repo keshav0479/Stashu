@@ -3,6 +3,7 @@
  */
 
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
 
 const KEY_LENGTH = 32;
 const NONCE_LENGTH = 24;
@@ -69,10 +70,7 @@ export interface EncryptResult {
  * @param data The file data as ArrayBuffer
  * @param key Optional key (generates random if not provided)
  */
-export async function encryptFile(
-  data: ArrayBuffer,
-  key?: Uint8Array
-): Promise<EncryptResult> {
+export async function encryptFile(data: ArrayBuffer, key?: Uint8Array): Promise<EncryptResult> {
   const encryptionKey = key ?? generateKey();
 
   if (encryptionKey.length !== KEY_LENGTH) {
@@ -114,9 +112,9 @@ export async function decryptFile(
 /**
  * Compute SHA-256 hash of data
  */
-export async function sha256(data: Uint8Array): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data as unknown as BufferSource);
-  return bytesToHex(new Uint8Array(hashBuffer));
+export function sha256(data: Uint8Array): string {
+  const hashBytes = nobleSha256(data);
+  return bytesToHex(hashBytes);
 }
 
 /**

@@ -29,7 +29,7 @@ export async function uploadToBlossom(
   const uploadUrl = `${server}/upload`;
 
   // Compute SHA-256 hash for Blossom auth
-  const dataHash = await sha256(data);
+  const dataHash = sha256(data);
 
   // Create Blossom Authorization event (kind 24242)
   const authEvent = await createBlossomAuthEvent(uploadUrl, dataHash);

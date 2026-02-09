@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Key, Copy, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { getRecoveryToken, acknowledgeRecovery } from '../lib/identity';
 import { useToast } from './Toast';
+import { copyToClipboard } from '../lib/clipboard';
 
 interface RecoveryTokenModalProps {
   onComplete: () => void;
@@ -15,12 +16,12 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
   const recoveryToken = getRecoveryToken();
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(recoveryToken);
+    const success = await copyToClipboard(recoveryToken);
+    if (success) {
       setCopied(true);
       toast.showToast('Recovery token copied!', 'success');
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       toast.showToast('Failed to copy', 'error');
     }
   };
