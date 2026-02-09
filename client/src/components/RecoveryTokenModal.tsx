@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Key, Copy, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { getRecoveryToken, acknowledgeRecovery } from '../lib/identity';
 import { useToast } from './Toast';
 
@@ -9,6 +10,7 @@ interface RecoveryTokenModalProps {
 export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const toast = useToast();
   const recoveryToken = getRecoveryToken();
 
@@ -35,19 +37,7 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl">
         <div className="text-center mb-6">
           <div className="w-16 h-16 mx-auto mb-4 bg-amber-500/20 rounded-2xl flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-amber-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-              />
-            </svg>
+            <Key className="w-8 h-8 text-amber-500" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">Your Recovery Token</h2>
           <p className="text-slate-400 text-sm">
@@ -57,8 +47,26 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
 
         <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-4">
           <div className="font-mono text-sm text-amber-400 break-all select-all leading-relaxed">
-            {recoveryToken}
+            {revealed
+              ? recoveryToken
+              : '••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••'}
           </div>
+          <button
+            onClick={() => setRevealed(!revealed)}
+            className="mt-3 text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1.5"
+          >
+            {revealed ? (
+              <>
+                <EyeOff className="w-3.5 h-3.5" />
+                Hide token
+              </>
+            ) : (
+              <>
+                <Eye className="w-3.5 h-3.5" />
+                Reveal token
+              </>
+            )}
+          </button>
         </div>
 
         <button
@@ -69,32 +77,12 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
         >
           {copied ? (
             <>
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
+              <Check className="w-5 h-5" />
               Copied!
             </>
           ) : (
             <>
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
+              <Copy className="w-5 h-5" />
               Copy to Clipboard
             </>
           )}
@@ -102,19 +90,7 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
 
         <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 mb-6">
           <div className="flex gap-3">
-            <svg
-              className="w-5 h-5 text-rose-400 shrink-0 mt-0.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div className="text-sm text-rose-300">
               <p className="font-semibold mb-1">If you lose this token, you lose your funds.</p>
               <p className="text-rose-400/80">There is no recovery. Save it before continuing.</p>
@@ -140,7 +116,7 @@ export function RecoveryTokenModal({ onComplete }: RecoveryTokenModalProps) {
           disabled={!acknowledged}
           className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
             acknowledged
-              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400 shadow-lg shadow-amber-500/25'
+              ? 'bg-linear-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400 shadow-lg shadow-amber-500/25'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed'
           }`}
         >

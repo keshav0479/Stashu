@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BarChart3, XCircle, Copy, Lightbulb, Package, Squirrel } from 'lucide-react';
 import { getDashboard } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
@@ -67,7 +68,9 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-6">🐿️</div>
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-orange-500/20 flex items-center justify-center">
+            <Squirrel className="w-8 h-8 text-orange-400" />
+          </div>
           <h1 className="text-2xl font-bold text-white mb-4">No Identity Found</h1>
           <p className="text-slate-400 mb-8">
             Create a stash first to generate your seller identity.
@@ -88,7 +91,9 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-5xl mb-4 animate-pulse">📊</div>
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
+            <BarChart3 className="w-8 h-8 text-slate-400 animate-pulse" />
+          </div>
           <p className="text-slate-400">Loading dashboard...</p>
         </div>
       </div>
@@ -100,7 +105,9 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-6">❌</div>
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-500/20 flex items-center justify-center">
+            <XCircle className="w-8 h-8 text-rose-400" />
+          </div>
           <h1 className="text-2xl font-bold text-white mb-4">Error Loading Dashboard</h1>
           <p className="text-slate-400 mb-8">{error}</p>
           <button
@@ -160,7 +167,7 @@ export function DashboardPage() {
                 onClick={copyAllTokens}
                 className="py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
               >
-                <span>📋</span>
+                <Copy className="w-4 h-4" />
                 Copy All Tokens
               </button>
             )}
@@ -170,7 +177,8 @@ export function DashboardPage() {
           {hasEarnings && (
             <div className="mt-6 bg-slate-900/50 rounded-xl p-4 border border-slate-700">
               <p className="text-slate-300 text-sm">
-                💡 <strong>Tip:</strong> To convert to Lightning, paste tokens in{' '}
+                <Lightbulb className="w-4 h-4 text-amber-400 shrink-0" /> <strong>Tip:</strong> To
+                convert to Lightning, paste tokens in{' '}
                 <a
                   href="https://nutstash.app"
                   target="_blank"
@@ -200,7 +208,9 @@ export function DashboardPage() {
 
           {!hasStashes ? (
             <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 text-center">
-              <div className="text-5xl mb-4">📦</div>
+              <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-slate-700 flex items-center justify-center">
+                <Package className="w-6 h-6 text-slate-400" />
+              </div>
               <p className="text-slate-400 mb-4">No stashes yet. Create your first one!</p>
               <Link
                 to="/sell"
