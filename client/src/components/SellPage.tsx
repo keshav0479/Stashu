@@ -108,10 +108,10 @@ export function SellPage() {
     <div className="min-h-screen bg-slate-900 py-12 px-6">
       <div className="max-w-2xl mx-auto">
         <Link
-          to="/"
+          to={hasAcknowledgedRecovery() ? '/dashboard' : '/'}
           className="text-slate-400 hover:text-white text-sm mb-2 inline-block transition-colors"
         >
-          ← Back to Home
+          {hasAcknowledgedRecovery() ? '← Back to Dashboard' : '← Back to Home'}
         </Link>
         <h1 className="text-3xl font-bold text-white mb-2">Create a Stash</h1>
         <p className="text-slate-400 mb-8">
