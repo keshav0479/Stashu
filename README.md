@@ -113,6 +113,9 @@ npm run dev
 - [x] Restore account page (`/restore`)
 - [x] Hide nsec by default (reveal toggle)
 - [x] Settings page (`/settings`)
+- [x] Mobile-responsive dashboard (stacked layout, full-width buttons)
+- [x] Lucide icons throughout (replaced emoji with proper SVG icons)
+- [x] Custom scrollbar styling
 - [ ] "How it Works" section on homepage
 
 ### Phase 6: Lightning Withdrawal (Seller)
@@ -123,7 +126,8 @@ npm run dev
 - [x] Token aggregation server-side
 - [x] Fee estimation display
 - [x] Mark tokens as claimed
-- [x] Settlement history modal
+- [x] Settlement history modal (with mint fee transparency)
+- [x] Settlement log for manual withdrawals (tracks LN address/invoice)
 
 ### Phase 7: Lightning Pay (Buyer)
 
@@ -136,11 +140,13 @@ npm run dev
 - [x] Invoice expiry countdown + refresh
 - [x] `lightning:` deep link for mobile wallets
 - [x] Mint failure recovery
+- [x] Invoice persistence across refresh (sessionStorage)
 
 ### Phase 8: Sovereignty Upgrades
 
 - [x] Auto-settlement via Lightning address (configurable threshold in settings)
 - [x] NIP-98 HTTP Auth on all seller endpoints
+- [x] Revenue vs. Balance split (Total Revenue + Available Balance display)
 - [ ] Fee transparency (warn when fee > 10% of withdrawal)
 - [ ] Encrypted token storage (encrypt seller_token at rest)
 - [ ] Browser-local wallet (move tokens client-side, delete from server)
@@ -166,6 +172,24 @@ npm run dev
 - [ ] Nostr event publishing
 - [ ] NSFW content flagging
 - [ ] Agent API
+
+## Development & Testing
+
+Stashu uses Cashu ecash mints for payments. For local development, you'll need access to a mint with real (small amounts of) sats:
+
+| Mint                 | URL                                      | Notes                         |
+| -------------------- | ---------------------------------------- | ----------------------------- |
+| Minibits             | `https://mint.minibits.cash/Bitcoin`     | Default. Reliable, small fees |
+| LNbits (self-hosted) | `http://localhost:5000/cashu/api/v1/...` | Run your own — full control   |
+
+**Getting test sats:**
+
+1. Install [Minibits](https://www.minibits.cash) (mobile) or use [Nutstash](https://nutstash.app) (web)
+2. Receive a small Lightning payment (10-100 sats) from a faucet or friend
+3. Mint Cashu tokens from the Lightning payment
+4. Use those tokens to test the buy flow, or paste invoices for the sell flow
+
+> **Tip:** Since Cashu operates on mainnet Lightning, there's no "testnet" mode. Keep test amounts small (10-100 sats). If you want a fully isolated setup, self-host an [LNbits](https://github.com/lnbits/lnbits) instance with the Cashu extension.
 
 ## License
 
