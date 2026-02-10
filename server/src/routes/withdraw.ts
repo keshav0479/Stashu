@@ -2,28 +2,25 @@ import { Hono } from 'hono';
 import db from '../db/index.js';
 import { getMeltQuote, meltToLightning } from '../lib/cashu.js';
 import { resolveAddress } from '../lib/lnaddress.js';
+import type { AuthVariables } from '../middleware/auth.js';
 import type {
-  WithdrawQuoteRequest,
   WithdrawQuoteResponse,
-  WithdrawRequest,
   WithdrawResponse,
   LnAddressResolveRequest,
   LnAddressResolveResponse,
   APIResponse,
 } from '../../../shared/types.js';
 
-export const withdrawRoutes = new Hono();
+export const withdrawRoutes = new Hono<{ Variables: AuthVariables }>();
 
 // POST /api/withdraw/quote - Get fee estimate for Lightning withdrawal
 withdrawRoutes.post('/quote', async (c) => {
   try {
-    const body = await c.req.json<WithdrawQuoteRequest>();
+    const pubkey = c.get('authedPubkey');
+    const body = await c.req.json<{ invoice: string }>();
 
-    if (!body.pubkey || !body.invoice) {
-      return c.json<APIResponse<never>>(
-        { success: false, error: 'pubkey and invoice are required' },
-        400
-      );
+    if (!body.invoice) {
+      return c.json<APIResponse<never>>({ success: false, error: 'invoice is required' }, 400);
     }
 
     // Get unclaimed tokens for this seller
@@ -36,7 +33,7 @@ withdrawRoutes.post('/quote', async (c) => {
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
     `
       )
-      .all(body.pubkey) as Array<{ seller_token: string; price_sats: number }>;
+      .all(pubkey) as Array<{ seller_token: string; price_sats: number }>;
 
     if (tokens.length === 0) {
       return c.json<APIResponse<never>>(
@@ -80,13 +77,11 @@ withdrawRoutes.post('/quote', async (c) => {
 // POST /api/withdraw/execute - Execute Lightning withdrawal
 withdrawRoutes.post('/execute', async (c) => {
   try {
-    const body = await c.req.json<WithdrawRequest>();
+    const pubkey = c.get('authedPubkey');
+    const body = await c.req.json<{ invoice: string }>();
 
-    if (!body.pubkey || !body.invoice) {
-      return c.json<APIResponse<never>>(
-        { success: false, error: 'pubkey and invoice are required' },
-        400
-      );
+    if (!body.invoice) {
+      return c.json<APIResponse<never>>({ success: false, error: 'invoice is required' }, 400);
     }
 
     // Get unclaimed tokens for this seller
@@ -99,7 +94,7 @@ withdrawRoutes.post('/execute', async (c) => {
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
     `
       )
-      .all(body.pubkey) as Array<{
+      .all(pubkey) as Array<{
       payment_id: string;
       seller_token: string;
       price_sats: number;
@@ -124,7 +119,7 @@ withdrawRoutes.post('/execute', async (c) => {
       db.prepare(
         `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, error)
          VALUES (?, 'failed', ?, ?)`
-      ).run(body.pubkey, totalSats, meltResult.error || 'Lightning withdrawal failed');
+      ).run(pubkey, totalSats, meltResult.error || 'Lightning withdrawal failed');
 
       return c.json<APIResponse<never>>(
         { success: false, error: meltResult.error || 'Lightning withdrawal failed' },
@@ -147,7 +142,7 @@ withdrawRoutes.post('/execute', async (c) => {
     db.prepare(
       `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, fee_sats, net_sats)
        VALUES (?, 'success', ?, ?, ?)`
-    ).run(body.pubkey, totalSats, feeSats, netSats);
+    ).run(pubkey, totalSats, feeSats, netSats);
 
     return c.json<APIResponse<WithdrawResponse>>({
       success: true,

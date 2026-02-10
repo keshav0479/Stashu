@@ -107,8 +107,8 @@ export interface DashboardResponse {
 }
 
 // POST /api/withdraw/quote
+// Note: pubkey comes from NIP-98 auth header, not the request body
 export interface WithdrawQuoteRequest {
-  pubkey: string;
   invoice: string;
 }
 
@@ -120,8 +120,8 @@ export interface WithdrawQuoteResponse {
 }
 
 // POST /api/withdraw/execute
+// Note: pubkey comes from NIP-98 auth header, not the request body
 export interface WithdrawRequest {
-  pubkey: string;
   invoice: string;
 }
 

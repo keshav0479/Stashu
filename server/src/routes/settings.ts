@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
+import type { AuthVariables } from '../middleware/auth.js';
 import type { SellerSettings, APIResponse } from '../../../shared/types.js';
 
-export const settingsRoutes = new Hono();
+export const settingsRoutes = new Hono<{ Variables: AuthVariables }>();
 
 // GET /api/settings/:pubkey — Get seller's auto-settlement settings
 settingsRoutes.get('/:pubkey', async (c) => {
   try {
-    const pubkey = c.req.param('pubkey');
+    const pubkey = c.get('authedPubkey');
 
     const row = db
       .prepare('SELECT ln_address, auto_withdraw_threshold FROM seller_settings WHERE pubkey = ?')
@@ -32,7 +33,7 @@ settingsRoutes.get('/:pubkey', async (c) => {
 // POST /api/settings/:pubkey — Save seller's auto-settlement settings
 settingsRoutes.post('/:pubkey', async (c) => {
   try {
-    const pubkey = c.req.param('pubkey');
+    const pubkey = c.get('authedPubkey');
     const body = await c.req.json<SellerSettings>();
 
     // Validate Lightning address format if provided

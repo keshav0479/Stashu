@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
+import type { AuthVariables } from '../middleware/auth.js';
 import type {
   DashboardResponse,
   SellerStashStats,
@@ -7,11 +8,11 @@ import type {
   APIResponse,
 } from '../../../shared/types.js';
 
-export const dashboardRoutes = new Hono();
+export const dashboardRoutes = new Hono<{ Variables: AuthVariables }>();
 
 dashboardRoutes.get('/:pubkey', async (c) => {
   try {
-    const pubkey = c.req.param('pubkey');
+    const pubkey = c.get('authedPubkey');
 
     const stashesStmt = db.prepare(`
       SELECT 
@@ -83,7 +84,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
 // GET /api/dashboard/:pubkey/settlements — Settlement history
 dashboardRoutes.get('/:pubkey/settlements', async (c) => {
   try {
-    const pubkey = c.req.param('pubkey');
+    const pubkey = c.get('authedPubkey');
 
     const rows = db
       .prepare(

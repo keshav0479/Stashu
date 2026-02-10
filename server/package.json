@@ -8,16 +8,18 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "hono": "^4.0.0",
-    "@hono/node-server": "^1.8.0",
-    "better-sqlite3": "^11.0.0",
     "@cashu/cashu-ts": "^2.0.0",
+    "@hono/node-server": "^1.8.0",
+    "@noble/curves": "^2.0.1",
+    "better-sqlite3": "^11.0.0",
+    "hono": "^4.0.0",
+    "nostr-tools": "^2.23.0",
     "uuid": "^11.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/uuid": "^10.0.0",
-    "typescript": "^5.3.0",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
   }
 }

@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
+import type { AuthVariables } from '../middleware/auth.js';
 import type { EarningsResponse, APIResponse } from '../../../shared/types.js';
 
-export const earningsRoutes = new Hono();
+export const earningsRoutes = new Hono<{ Variables: AuthVariables }>();
 
 // GET /api/earnings/:pubkey - Get unclaimed tokens for a seller
 earningsRoutes.get('/:pubkey', async (c) => {
   try {
-    const pubkey = c.req.param('pubkey');
+    const pubkey = c.get('authedPubkey');
 
     // Get all paid payments for stashes owned by this seller
     const stmt = db.prepare(`

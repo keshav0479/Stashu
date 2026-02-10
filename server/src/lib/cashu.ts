@@ -1,7 +1,7 @@
 import { CashuMint, CashuWallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
 
-// Minibits Cashu Mint
-const MINT_URL = 'https://mint.minibits.cash/Bitcoin';
+// Cashu Mint URL — configurable via env for production
+const MINT_URL = process.env.MINT_URL || 'https://mint.minibits.cash/Bitcoin';
 
 let wallet: CashuWallet | null = null;
 

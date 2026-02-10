@@ -6,9 +6,7 @@ import type {
   UnlockRequest,
   UnlockResponse,
   DashboardResponse,
-  WithdrawQuoteRequest,
   WithdrawQuoteResponse,
-  WithdrawRequest,
   WithdrawResponse,
   PayInvoiceResponse,
   PayStatusResponse,
@@ -16,6 +14,7 @@ import type {
   SellerSettings,
   SettlementLogEntry,
 } from '../../../shared/types';
+import { createAuthHeader } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -72,7 +71,10 @@ export async function unlockStash(id: string, token: string): Promise<UnlockResp
 }
 
 export async function getDashboard(pubkey: string): Promise<DashboardResponse> {
-  const response = await fetch(`${API_BASE}/dashboard/${pubkey}`);
+  const url = `${API_BASE}/dashboard/${pubkey}`;
+  const response = await fetch(url, {
+    headers: { Authorization: createAuthHeader(url, 'GET') },
+  });
   const result: APIResponse<DashboardResponse> = await response.json();
 
   if (!result.success) {
@@ -86,13 +88,17 @@ export async function getDashboard(pubkey: string): Promise<DashboardResponse> {
  * Get a fee quote for Lightning withdrawal
  */
 export async function getWithdrawQuote(
-  pubkey: string,
+  _pubkey: string,
   invoice: string
 ): Promise<WithdrawQuoteResponse> {
-  const response = await fetch(`${API_BASE}/withdraw/quote`, {
+  const url = `${API_BASE}/withdraw/quote`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pubkey, invoice } as WithdrawQuoteRequest),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'POST'),
+    },
+    body: JSON.stringify({ invoice }),
   });
 
   const result: APIResponse<WithdrawQuoteResponse> = await response.json();
@@ -107,11 +113,15 @@ export async function getWithdrawQuote(
 /**
  * Execute a Lightning withdrawal
  */
-export async function executeWithdraw(pubkey: string, invoice: string): Promise<WithdrawResponse> {
-  const response = await fetch(`${API_BASE}/withdraw/execute`, {
+export async function executeWithdraw(_pubkey: string, invoice: string): Promise<WithdrawResponse> {
+  const url = `${API_BASE}/withdraw/execute`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pubkey, invoice } as WithdrawRequest),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'POST'),
+    },
+    body: JSON.stringify({ invoice }),
   });
 
   const result: APIResponse<WithdrawResponse> = await response.json();
@@ -162,9 +172,13 @@ export async function resolveLnAddress(
   address: string,
   amountSats: number
 ): Promise<LnAddressResolveResponse> {
-  const response = await fetch(`${API_BASE}/withdraw/resolve-address`, {
+  const url = `${API_BASE}/withdraw/resolve-address`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'POST'),
+    },
     body: JSON.stringify({ address, amountSats }),
   });
 
@@ -181,7 +195,10 @@ export async function resolveLnAddress(
  * Get seller's auto-settlement settings
  */
 export async function getSettings(pubkey: string): Promise<SellerSettings> {
-  const response = await fetch(`${API_BASE}/settings/${pubkey}`);
+  const url = `${API_BASE}/settings/${pubkey}`;
+  const response = await fetch(url, {
+    headers: { Authorization: createAuthHeader(url, 'GET') },
+  });
   const result: APIResponse<SellerSettings> = await response.json();
   if (!result.success) throw new Error(result.error);
   return result.data;
@@ -194,9 +211,13 @@ export async function saveSettings(
   pubkey: string,
   settings: SellerSettings
 ): Promise<SellerSettings> {
-  const response = await fetch(`${API_BASE}/settings/${pubkey}`, {
+  const url = `${API_BASE}/settings/${pubkey}`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'POST'),
+    },
     body: JSON.stringify(settings),
   });
   const result: APIResponse<SellerSettings> = await response.json();
@@ -208,7 +229,10 @@ export async function saveSettings(
  * Get settlement history for a seller
  */
 export async function getSettlements(pubkey: string): Promise<SettlementLogEntry[]> {
-  const response = await fetch(`${API_BASE}/dashboard/${pubkey}/settlements`);
+  const url = `${API_BASE}/dashboard/${pubkey}/settlements`;
+  const response = await fetch(url, {
+    headers: { Authorization: createAuthHeader(url, 'GET') },
+  });
   const result: APIResponse<SettlementLogEntry[]> = await response.json();
   if (!result.success) throw new Error(result.error);
   return result.data;
