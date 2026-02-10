@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, XCircle, Copy, Lightbulb, Package, Squirrel } from 'lucide-react';
+import { BarChart3, XCircle, Copy, Lightbulb, Package, Squirrel, Settings } from 'lucide-react';
 import { getDashboard } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
@@ -140,12 +140,21 @@ export function DashboardPage() {
             </Link>
             <h1 className="text-3xl font-bold text-white">Seller Dashboard</h1>
           </div>
-          <Link
-            to="/sell"
-            className="w-full sm:w-auto text-center py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
-            + New Stash
-          </Link>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Link
+              to="/settings"
+              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+              title="Settings"
+            >
+              <Settings className="w-5 h-5 text-slate-400" />
+            </Link>
+            <Link
+              to="/sell"
+              className="flex-1 sm:flex-initial text-center py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
+            >
+              + New Stash
+            </Link>
+          </div>
         </div>
 
         {/* Earnings Card */}

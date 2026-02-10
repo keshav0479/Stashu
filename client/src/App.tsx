@@ -8,7 +8,7 @@ function App() {
   const userHasIdentity = hasIdentity();
 
   return (
-    <div className="min-h-screen h-screen grid grid-rows-[1fr_auto] p-4 md:p-8 pb-[env(safe-area-inset-bottom,16px)]">
+    <div className="min-h-screen grid grid-rows-[1fr_auto] p-4 md:p-8 pb-[env(safe-area-inset-bottom,16px)]">
       <div className="flex flex-col items-center justify-center gap-4 min-h-0">
         {/* Logo and Title */}
         <div className="text-center relative z-10">
