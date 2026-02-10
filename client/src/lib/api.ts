@@ -14,6 +14,7 @@ import type {
   PayStatusResponse,
   LnAddressResolveResponse,
   SellerSettings,
+  SettlementLogEntry,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -199,6 +200,16 @@ export async function saveSettings(
     body: JSON.stringify(settings),
   });
   const result: APIResponse<SellerSettings> = await response.json();
+  if (!result.success) throw new Error(result.error);
+  return result.data;
+}
+
+/**
+ * Get settlement history for a seller
+ */
+export async function getSettlements(pubkey: string): Promise<SettlementLogEntry[]> {
+  const response = await fetch(`${API_BASE}/dashboard/${pubkey}/settlements`);
+  const result: APIResponse<SettlementLogEntry[]> = await response.json();
   if (!result.success) throw new Error(result.error);
   return result.data;
 }

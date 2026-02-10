@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
+import { tryAutoSettle } from '../lib/autosettle.js';
 import type { SellerSettings, APIResponse } from '../../../shared/types.js';
 
 export const settingsRoutes = new Hono();
@@ -53,6 +54,9 @@ settingsRoutes.post('/:pubkey', async (c) => {
          auto_withdraw_threshold = excluded.auto_withdraw_threshold,
          updated_at = unixepoch()`
     ).run(pubkey, body.lnAddress || null, threshold);
+
+    // Trigger auto-settlement for any existing unclaimed balance
+    tryAutoSettle(pubkey).catch(() => {});
 
     return c.json<APIResponse<SellerSettings>>({
       success: true,

@@ -162,3 +162,15 @@ export interface SellerSettings {
   lnAddress: string;
   autoWithdrawThreshold: number; // in sats, 0 = disabled
 }
+
+// GET /api/dashboard/:pubkey/settlements
+export interface SettlementLogEntry {
+  id: number;
+  status: 'success' | 'failed' | 'skipped';
+  amountSats: number | null;
+  feeSats: number | null;
+  netSats: number | null;
+  lnAddress: string | null;
+  error: string | null;
+  createdAt: number;
+}

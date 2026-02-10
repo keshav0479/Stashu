@@ -64,4 +64,20 @@ db.exec(`
   );
 `);
 
+// Settlement history log
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settlement_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_pubkey TEXT NOT NULL,
+    status TEXT NOT NULL,
+    amount_sats INTEGER,
+    fee_sats INTEGER,
+    net_sats INTEGER,
+    ln_address TEXT,
+    error TEXT,
+    created_at INTEGER DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_settlement_seller ON settlement_log(seller_pubkey);
+`);
+
 export default db;

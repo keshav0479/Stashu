@@ -29,6 +29,8 @@ export function SettingsPage() {
   // Auto-settlement state
   const [lnAddress, setLnAddress] = useState('');
   const [threshold, setThreshold] = useState(0);
+  const [savedLnAddress, setSavedLnAddress] = useState('');
+  const [savedThreshold, setSavedThreshold] = useState(0);
   const [saving, setSaving] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [settingsChanged, setSettingsChanged] = useState(false);
@@ -40,6 +42,8 @@ export function SettingsPage() {
         .then((s) => {
           setLnAddress(s.lnAddress);
           setThreshold(s.autoWithdrawThreshold);
+          setSavedLnAddress(s.lnAddress);
+          setSavedThreshold(s.autoWithdrawThreshold);
         })
         .catch(() => {})
         .finally(() => setLoadingSettings(false));
@@ -98,6 +102,8 @@ export function SettingsPage() {
         autoWithdrawThreshold: threshold,
       });
       toast.showToast('Settings saved!', 'success');
+      setSavedLnAddress(lnAddress);
+      setSavedThreshold(threshold);
       setSettingsChanged(false);
     } catch (err) {
       toast.showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
@@ -107,7 +113,7 @@ export function SettingsPage() {
   };
 
   const thresholdPresets = [100, 500, 1000, 5000, 10000];
-  const isAutoSettleEnabled = lnAddress.trim() !== '' && threshold > 0;
+  const isAutoSettleActive = savedLnAddress.trim() !== '' && savedThreshold > 0;
 
   return (
     <div className="min-h-screen py-12 px-6">
@@ -133,9 +139,13 @@ export function SettingsPage() {
           <div className="flex items-center gap-2 mb-2">
             <Zap className="w-5 h-5 text-amber-400" />
             <h2 className="text-lg font-semibold text-white">Auto-Settlement</h2>
-            {isAutoSettleEnabled && (
+            {isAutoSettleActive ? (
               <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 Active
+              </span>
+            ) : (
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-400 border border-slate-700/50">
+                Disabled
               </span>
             )}
           </div>
@@ -190,9 +200,6 @@ export function SettingsPage() {
                     className="w-32 bg-slate-950 border border-slate-700 rounded-xl p-3 text-white text-sm font-mono focus:outline-none focus:border-amber-500"
                   />
                   <span className="text-slate-400 text-sm">sats</span>
-                  {threshold === 0 && (
-                    <span className="text-slate-500 text-xs">(0 = disabled)</span>
-                  )}
                 </div>
 
                 {/* Preset buttons */}
@@ -214,6 +221,13 @@ export function SettingsPage() {
                     </button>
                   ))}
                 </div>
+                {threshold > 0 && (
+                  <p className="text-slate-500 text-xs mt-2">
+                    When balance reaches {threshold.toLocaleString()} sats, all earnings are
+                    withdrawn minus the network routing fee. If withdrawal fails (e.g. wallet
+                    offline), tokens stay safe and retry on the next payment.
+                  </p>
+                )}
               </div>
 
               {/* Save button */}
@@ -238,6 +252,11 @@ export function SettingsPage() {
                   </>
                 )}
               </button>
+              {isAutoSettleActive && (
+                <p className="text-slate-500 text-xs mt-2">
+                  To disable, clear the Lightning address and save.
+                </p>
+              )}
             </>
           )}
         </div>

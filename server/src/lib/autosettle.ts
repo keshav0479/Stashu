@@ -8,6 +8,25 @@ interface SettingsRow {
   auto_withdraw_threshold: number;
 }
 
+function logSettlement(
+  sellerPubkey: string,
+  status: 'success' | 'failed' | 'skipped',
+  data: { amount?: number; fee?: number; net?: number; lnAddress?: string; error?: string }
+) {
+  db.prepare(
+    `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, fee_sats, net_sats, ln_address, error)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    sellerPubkey,
+    status,
+    data.amount || null,
+    data.fee || null,
+    data.net || null,
+    data.lnAddress || null,
+    data.error || null
+  );
+}
+
 /**
  * Try auto-settlement for a seller after a new payment comes in.
  * Runs in the background — errors are logged but never block the caller.
@@ -36,7 +55,7 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     const balance = result?.total || 0;
 
     if (balance < settings.auto_withdraw_threshold) {
-      return; // Below threshold
+      return; // Below threshold — don't log, this is normal
     }
 
     console.log(
@@ -57,31 +76,71 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     if (tokens.length === 0) return;
 
     // 4. Resolve LN address: first get fee, then resolve for net amount
-    const tempInvoice = await resolveAddress(settings.ln_address, balance);
+    let tempInvoice: string;
+    try {
+      tempInvoice = await resolveAddress(settings.ln_address, balance);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Failed to resolve LN address';
+      logSettlement(sellerPubkey, 'failed', {
+        amount: balance,
+        lnAddress: settings.ln_address,
+        error,
+      });
+      console.error('Auto-settlement: LN resolve failed:', error);
+      return;
+    }
+
     const tempQuote = await getMeltQuote(tempInvoice);
 
     if (!tempQuote.success || !tempQuote.feeSats) {
-      console.error('Auto-settlement: failed to get fee estimate');
+      logSettlement(sellerPubkey, 'failed', {
+        amount: balance,
+        lnAddress: settings.ln_address,
+        error: 'Failed to get fee estimate from mint',
+      });
       return;
     }
 
     const netAmount = balance - tempQuote.feeSats;
     if (netAmount <= 0) {
-      console.log(
-        `Auto-settlement: balance ${balance} too low to cover ${tempQuote.feeSats} fee, skipping`
-      );
+      logSettlement(sellerPubkey, 'skipped', {
+        amount: balance,
+        fee: tempQuote.feeSats,
+        lnAddress: settings.ln_address,
+        error: `Balance ${balance} too low to cover ${tempQuote.feeSats} fee`,
+      });
       return;
     }
 
     // Re-resolve for the correct net amount
-    const finalInvoice = await resolveAddress(settings.ln_address, netAmount);
+    let finalInvoice: string;
+    try {
+      finalInvoice = await resolveAddress(settings.ln_address, netAmount);
+    } catch (err) {
+      const error =
+        err instanceof Error ? err.message : 'Failed to resolve LN address for net amount';
+      logSettlement(sellerPubkey, 'failed', {
+        amount: balance,
+        fee: tempQuote.feeSats,
+        net: netAmount,
+        lnAddress: settings.ln_address,
+        error,
+      });
+      return;
+    }
 
     // 5. Melt tokens to pay the invoice
     const tokenStrings = tokens.map((t) => t.seller_token);
     const meltResult = await meltToLightning(tokenStrings, finalInvoice);
 
     if (!meltResult.success) {
-      console.error('Auto-settlement melt failed:', meltResult.error);
+      logSettlement(sellerPubkey, 'failed', {
+        amount: balance,
+        fee: tempQuote.feeSats,
+        net: netAmount,
+        lnAddress: settings.ln_address,
+        error: meltResult.error || 'Melt failed (Lightning payment error)',
+      });
       return;
     }
 
@@ -94,12 +153,26 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     });
     markAll();
 
+    // 7. Log success
+    logSettlement(sellerPubkey, 'success', {
+      amount: balance,
+      fee: tempQuote.feeSats,
+      net: netAmount,
+      lnAddress: settings.ln_address,
+    });
+
     console.log(
       `✅ Auto-settlement complete: ${netAmount} sats sent to ${settings.ln_address} ` +
         `(fee: ${tempQuote.feeSats} sats, ${tokens.length} tokens claimed)`
     );
   } catch (error) {
-    // Never let auto-settlement errors propagate — it's best-effort
+    // Catch-all — never let auto-settlement errors propagate
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    try {
+      logSettlement(sellerPubkey, 'failed', { error: errorMsg });
+    } catch {
+      // If even logging fails, just console
+    }
     console.error('Auto-settlement error:', error);
   }
 }

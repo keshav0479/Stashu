@@ -1,6 +1,11 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
-import type { DashboardResponse, SellerStashStats, APIResponse } from '../../../shared/types.js';
+import type {
+  DashboardResponse,
+  SellerStashStats,
+  SettlementLogEntry,
+  APIResponse,
+} from '../../../shared/types.js';
 
 export const dashboardRoutes = new Hono();
 
@@ -70,6 +75,54 @@ dashboardRoutes.get('/:pubkey', async (c) => {
         success: false,
         error: 'Failed to fetch dashboard data',
       },
+      500
+    );
+  }
+});
+
+// GET /api/dashboard/:pubkey/settlements — Settlement history
+dashboardRoutes.get('/:pubkey/settlements', async (c) => {
+  try {
+    const pubkey = c.req.param('pubkey');
+
+    const rows = db
+      .prepare(
+        `SELECT id, status, amount_sats, fee_sats, net_sats, ln_address, error, created_at
+         FROM settlement_log
+         WHERE seller_pubkey = ?
+         ORDER BY created_at DESC
+         LIMIT 20`
+      )
+      .all(pubkey) as Array<{
+      id: number;
+      status: string;
+      amount_sats: number | null;
+      fee_sats: number | null;
+      net_sats: number | null;
+      ln_address: string | null;
+      error: string | null;
+      created_at: number;
+    }>;
+
+    const entries: SettlementLogEntry[] = rows.map((r) => ({
+      id: r.id,
+      status: r.status as SettlementLogEntry['status'],
+      amountSats: r.amount_sats,
+      feeSats: r.fee_sats,
+      netSats: r.net_sats,
+      lnAddress: r.ln_address,
+      error: r.error,
+      createdAt: r.created_at,
+    }));
+
+    return c.json<APIResponse<SettlementLogEntry[]>>({
+      success: true,
+      data: entries,
+    });
+  } catch (error) {
+    console.error('Error fetching settlements:', error);
+    return c.json<APIResponse<never>>(
+      { success: false, error: 'Failed to fetch settlement history' },
       500
     );
   }

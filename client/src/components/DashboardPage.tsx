@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, XCircle, Copy, Package, Squirrel, Settings, Zap } from 'lucide-react';
-import { getDashboard } from '../lib/api';
+import { BarChart3, XCircle, Copy, Package, Squirrel, Settings, Zap, History } from 'lucide-react';
+import { getDashboard, getSettlements } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
 import { copyToClipboard } from '../lib/clipboard';
 import { WithdrawModal } from './WithdrawModal';
-import type { DashboardResponse, SellerStashStats } from '../../../shared/types';
+import { SettlementHistoryModal } from './SettlementHistoryModal';
+import type {
+  DashboardResponse,
+  SellerStashStats,
+  SettlementLogEntry,
+} from '../../../shared/types';
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-identity';
 
@@ -17,6 +22,8 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showWithdraw, setShowWithdraw] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [settlements, setSettlements] = useState<SettlementLogEntry[]>([]);
   const toast = useToast();
 
   useEffect(() => {
@@ -39,7 +46,18 @@ export function DashboardPage() {
       }
     };
 
+    async function loadSettlements() {
+      try {
+        const pubkey = getPublicKeyHex();
+        const result = await getSettlements(pubkey);
+        setSettlements(result);
+      } catch {
+        // Settlement history is optional, don't block on errors
+      }
+    }
+
     loadDashboard();
+    loadSettlements();
     return () => {
       cancelled = true;
     };
@@ -170,14 +188,24 @@ export function DashboardPage() {
         </div>
 
         {/* Earnings Card */}
-        <div className="bg-linear-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/30 rounded-2xl p-8 mb-8">
+        <div className="relative bg-linear-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/30 rounded-2xl p-8 mb-8">
+          <button
+            onClick={() => setShowHistory(true)}
+            className="absolute top-4 right-4 p-2 text-orange-300/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            title="View Settlement History"
+          >
+            <History className="w-5 h-5" />
+          </button>
+
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6 sm:gap-0">
             <div className="text-center sm:text-left w-full sm:w-auto">
               <p className="text-orange-300 text-sm font-medium mb-1">Total Earnings</p>
-              <p className="text-4xl font-bold text-white">
-                {data?.earnings.totalSats.toLocaleString() || 0}{' '}
+              <div className="flex items-baseline justify-center sm:justify-start gap-2">
+                <span className="text-4xl font-bold text-white">
+                  {data!.earnings.totalSats.toLocaleString()}
+                </span>
                 <span className="text-xl text-orange-400">sats</span>
-              </p>
+              </div>
               {hasEarnings && (
                 <p className="text-slate-400 text-sm mt-2">
                   {data!.earnings.tokens.length} unclaimed token(s)
@@ -277,6 +305,11 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Settlement History Modal */}
+      {showHistory && (
+        <SettlementHistoryModal settlements={settlements} onClose={() => setShowHistory(false)} />
+      )}
 
       {/* Withdraw Modal */}
       {showWithdraw && data && (

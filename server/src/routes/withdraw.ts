@@ -114,11 +114,18 @@ withdrawRoutes.post('/execute', async (c) => {
 
     const tokens = tokenRows.map((r) => r.seller_token);
     const paymentIds = tokenRows.map((r) => r.payment_id);
+    const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
 
     // Melt tokens to Lightning
     const meltResult = await meltToLightning(tokens, body.invoice);
 
     if (!meltResult.success) {
+      // Log failed manual withdrawal
+      db.prepare(
+        `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, error)
+         VALUES (?, 'failed', ?, ?)`
+      ).run(body.pubkey, totalSats, meltResult.error || 'Lightning withdrawal failed');
+
       return c.json<APIResponse<never>>(
         { success: false, error: meltResult.error || 'Lightning withdrawal failed' },
         400
@@ -134,11 +141,19 @@ withdrawRoutes.post('/execute', async (c) => {
     });
     markAll();
 
+    // Log successful manual withdrawal
+    const feeSats = meltResult.feeSats || 0;
+    const netSats = totalSats - feeSats;
+    db.prepare(
+      `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, fee_sats, net_sats)
+       VALUES (?, 'success', ?, ?, ?)`
+    ).run(body.pubkey, totalSats, feeSats, netSats);
+
     return c.json<APIResponse<WithdrawResponse>>({
       success: true,
       data: {
         paid: true,
-        feeSats: meltResult.feeSats || 0,
+        feeSats,
         preimage: meltResult.preimage || '',
       },
     });
