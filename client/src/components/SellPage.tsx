@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { FileUploader } from './FileUploader';
 import { RecoveryTokenModal } from './RecoveryTokenModal';
 import { useToast } from './Toast';
@@ -106,6 +107,12 @@ export function SellPage() {
   return (
     <div className="min-h-screen bg-slate-900 py-12 px-6">
       <div className="max-w-2xl mx-auto">
+        <Link
+          to="/"
+          className="text-slate-400 hover:text-white text-sm mb-2 inline-block transition-colors"
+        >
+          ← Back to Home
+        </Link>
         <h1 className="text-3xl font-bold text-white mb-2">Create a Stash</h1>
         <p className="text-slate-400 mb-8">
           Upload a file, set your price, and get a shareable link
