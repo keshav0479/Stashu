@@ -23,7 +23,7 @@ Stashu is a trust-minimized protocol for selling digital files for Bitcoin. No a
 
 1. Seller uploads file → encrypted client-side → stored on Blossom
 2. Seller sets price in sats → gets shareable link
-3. Buyer pays with Cashu token → receives decryption key
+3. Buyer scans Lightning QR → pays with any wallet → receives decryption key
 4. Buyer downloads and decrypts → done
 
 ## Quick Start
@@ -92,19 +92,28 @@ npm run dev
 - [x] Recovery token modal (prevent fund loss)
 - [x] Seller dashboard with earnings display
 - [x] Toast notifications
-- [ ] Dashboard link on homepage
-- [ ] Restore account page (`/restore`)
-- [ ] Hide nsec by default (reveal toggle)
-- [ ] Settings page (`/settings`)
+- [x] Dashboard link on homepage
+- [x] Restore account page (`/restore`)
+- [x] Hide nsec by default (reveal toggle)
+- [x] Settings page (`/settings`)
 - [ ] "How it Works" section on homepage
 
-### Phase 6: Lightning Withdrawal
+### Phase 6: Lightning Withdrawal (Seller)
 
-- [ ] One-click Lightning withdrawal
-- [ ] Lightning address input
-- [ ] Token aggregation server-side
-- [ ] Fee estimation display
-- [ ] Mark tokens as claimed
+- [x] One-click Lightning withdrawal
+- [x] BOLT11 invoice input
+- [x] Token aggregation server-side
+- [x] Fee estimation display
+- [x] Mark tokens as claimed
+
+### Phase 6.5: Lightning Pay (Buyer)
+
+- [ ] Lightning invoice QR code on unlock page
+- [ ] Server-side mint quote creation
+- [ ] Auto-polling for payment confirmation
+- [ ] Server-side token minting after payment
+- [ ] Auto-download on payment
+- [ ] Cashu token paste as fallback option
 
 ### Phase 7: Payment Flexibility
 
