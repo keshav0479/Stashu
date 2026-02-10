@@ -7,6 +7,7 @@ import { earningsRoutes } from './routes/earnings.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { withdrawRoutes } from './routes/withdraw.js';
 import { payRoutes } from './routes/pay.js';
+import { settingsRoutes } from './routes/settings.js';
 
 const app = new Hono();
 
@@ -34,6 +35,7 @@ app.route('/api/earnings', earningsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/withdraw', withdrawRoutes);
 app.route('/api/pay', payRoutes);
+app.route('/api/settings', settingsRoutes);
 
 const port = 3000;
 console.log(`🐿️ Stashu server running on http://localhost:${port}`);

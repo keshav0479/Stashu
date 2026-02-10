@@ -13,6 +13,7 @@ import type {
   PayInvoiceResponse,
   PayStatusResponse,
   LnAddressResolveResponse,
+  SellerSettings,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -172,5 +173,32 @@ export async function resolveLnAddress(
     throw new Error(result.error);
   }
 
+  return result.data;
+}
+
+/**
+ * Get seller's auto-settlement settings
+ */
+export async function getSettings(pubkey: string): Promise<SellerSettings> {
+  const response = await fetch(`${API_BASE}/settings/${pubkey}`);
+  const result: APIResponse<SellerSettings> = await response.json();
+  if (!result.success) throw new Error(result.error);
+  return result.data;
+}
+
+/**
+ * Save seller's auto-settlement settings
+ */
+export async function saveSettings(
+  pubkey: string,
+  settings: SellerSettings
+): Promise<SellerSettings> {
+  const response = await fetch(`${API_BASE}/settings/${pubkey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  const result: APIResponse<SellerSettings> = await response.json();
+  if (!result.success) throw new Error(result.error);
   return result.data;
 }

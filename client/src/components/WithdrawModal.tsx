@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Zap, X, AlertTriangle, Check, Loader2 } from 'lucide-react';
+import { Zap, X, AlertTriangle, Check, Loader2, Lightbulb } from 'lucide-react';
 import { getWithdrawQuote, executeWithdraw, resolveLnAddress } from '../lib/api';
 import { getPublicKeyHex } from '../lib/identity';
 import { useToast } from './Toast';
@@ -174,8 +174,13 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
               rows={3}
               className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-amber-400 font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500 resize-none mb-2"
             />
-            <p className="text-slate-500 text-xs mb-4">
-              Paste a BOLT11 invoice or a Lightning address (e.g. you@walletofsatoshi.com)
+            <p className="text-slate-500 text-xs mb-1">
+              Paste a BOLT11 invoice or a Lightning address (e.g. you@domain.com)
+            </p>
+            <p className="text-slate-500 text-xs mb-4 flex items-start gap-1">
+              <Lightbulb className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500/60" />
+              Use an always-online wallet for reliable payments. Self-custodial mobile wallets may
+              miss payments when offline.
             </p>
 
             {error && (

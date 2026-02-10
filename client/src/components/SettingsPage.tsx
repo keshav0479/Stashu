@@ -1,7 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Settings, Copy, Check, Eye, EyeOff, AlertTriangle, Trash2, Shield } from 'lucide-react';
-import { hasIdentity, getOrCreateIdentity, clearIdentity } from '../lib/identity';
+import {
+  Settings,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Trash2,
+  Shield,
+  Zap,
+  Loader2,
+  Save,
+  Lightbulb,
+} from 'lucide-react';
+import { hasIdentity, getOrCreateIdentity, getPublicKeyHex, clearIdentity } from '../lib/identity';
+import { getSettings, saveSettings } from '../lib/api';
 import { useToast } from './Toast';
 import { copyToClipboard } from '../lib/clipboard';
 
@@ -11,6 +25,28 @@ export function SettingsPage() {
   const [nsecRevealed, setNsecRevealed] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Auto-settlement state
+  const [lnAddress, setLnAddress] = useState('');
+  const [threshold, setThreshold] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [settingsChanged, setSettingsChanged] = useState(false);
+
+  useEffect(() => {
+    if (hasIdentity()) {
+      const pubkey = getPublicKeyHex();
+      getSettings(pubkey)
+        .then((s) => {
+          setLnAddress(s.lnAddress);
+          setThreshold(s.autoWithdrawThreshold);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingSettings(false));
+    } else {
+      setLoadingSettings(false);
+    }
+  }, []);
 
   if (!hasIdentity()) {
     return (
@@ -53,6 +89,26 @@ export function SettingsPage() {
     navigate('/');
   };
 
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      const pubkey = getPublicKeyHex();
+      await saveSettings(pubkey, {
+        lnAddress,
+        autoWithdrawThreshold: threshold,
+      });
+      toast.showToast('Settings saved!', 'success');
+      setSettingsChanged(false);
+    } catch (err) {
+      toast.showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const thresholdPresets = [100, 500, 1000, 5000, 10000];
+  const isAutoSettleEnabled = lnAddress.trim() !== '' && threshold > 0;
+
   return (
     <div className="min-h-screen py-12 px-6">
       <div className="max-w-2xl mx-auto">
@@ -70,6 +126,120 @@ export function SettingsPage() {
             </div>
             <h1 className="text-3xl font-bold text-white">Settings</h1>
           </div>
+        </div>
+
+        {/* Auto-Settlement */}
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h2 className="text-lg font-semibold text-white">Auto-Settlement</h2>
+            {isAutoSettleEnabled && (
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                Active
+              </span>
+            )}
+          </div>
+          <p className="text-slate-400 text-sm mb-5">
+            Automatically withdraw earnings to your Lightning wallet when your balance reaches the
+            threshold. Set it once, earn passively.
+          </p>
+
+          {loadingSettings ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+            </div>
+          ) : (
+            <>
+              {/* Lightning Address */}
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Lightning Address
+                </label>
+                <input
+                  type="text"
+                  value={lnAddress}
+                  onChange={(e) => {
+                    setLnAddress(e.target.value);
+                    setSettingsChanged(true);
+                  }}
+                  placeholder="you@your-wallet.com"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-amber-400 font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-slate-500 text-xs mt-1.5 flex items-start gap-1">
+                  <Lightbulb className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500/60" />
+                  Use an always-online wallet (e.g. Alby, WoS, Coinos) for reliable auto-settlement.
+                  Self-custodial mobile wallets may miss payments when offline.
+                </p>
+              </div>
+
+              {/* Threshold */}
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Auto-withdraw when balance reaches
+                </label>
+                <div className="flex items-center gap-3 mb-3">
+                  <input
+                    type="number"
+                    value={threshold || ''}
+                    onChange={(e) => {
+                      setThreshold(Math.max(0, parseInt(e.target.value) || 0));
+                      setSettingsChanged(true);
+                    }}
+                    placeholder="0"
+                    min="0"
+                    className="w-32 bg-slate-950 border border-slate-700 rounded-xl p-3 text-white text-sm font-mono focus:outline-none focus:border-amber-500"
+                  />
+                  <span className="text-slate-400 text-sm">sats</span>
+                  {threshold === 0 && (
+                    <span className="text-slate-500 text-xs">(0 = disabled)</span>
+                  )}
+                </div>
+
+                {/* Preset buttons */}
+                <div className="flex flex-wrap gap-2">
+                  {thresholdPresets.map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => {
+                        setThreshold(preset);
+                        setSettingsChanged(true);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        threshold === preset
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      {preset.toLocaleString()} sats
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Save button */}
+              <button
+                onClick={handleSaveSettings}
+                disabled={saving || !settingsChanged}
+                className={`flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm transition-all ${
+                  saving || !settingsChanged
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                }`}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save Settings
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
 
         {/* Public Key */}

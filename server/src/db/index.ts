@@ -53,4 +53,15 @@ try {
 // Create index after migration ensures column exists
 db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_claimed ON payments(claimed)`);
 
+// Seller settings for auto-settlement
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seller_settings (
+    pubkey TEXT PRIMARY KEY,
+    ln_address TEXT,
+    auto_withdraw_threshold INTEGER DEFAULT 0,
+    created_at INTEGER DEFAULT (unixepoch()),
+    updated_at INTEGER DEFAULT (unixepoch())
+  );
+`);
+
 export default db;

@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Storage-Blossom-purple" alt="Blossom">
-    <img src="https://img.shields.io/badge/Payment-Cashu-orange" alt="Cashu">
+    <img src="https://img.shields.io/badge/Payment-Cashu_%2B_Lightning-orange" alt="Cashu + Lightning">
     <img src="https://img.shields.io/badge/Encryption-NIP--44-blue" alt="NIP-44">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   </p>
@@ -47,7 +47,7 @@ npm run dev
 | Database   | SQLite (better-sqlite3)              |
 | Storage    | Blossom (BUD-02)                     |
 | Encryption | XChaCha20-Poly1305 (NIP-44)          |
-| Payment    | Cashu                                |
+| Payment    | Cashu + Lightning (LUD-16)           |
 | Identity   | Local keypair with recovery token    |
 
 ## Roadmap
@@ -102,27 +102,38 @@ npm run dev
 
 - [x] One-click Lightning withdrawal
 - [x] BOLT11 invoice input
+- [x] Lightning address support (user@domain.com)
 - [x] Token aggregation server-side
 - [x] Fee estimation display
 - [x] Mark tokens as claimed
 
-### Phase 6.5: Lightning Pay (Buyer)
+### Phase 7: Lightning Pay (Buyer)
 
-- [ ] Lightning invoice QR code on unlock page
-- [ ] Server-side mint quote creation
-- [ ] Auto-polling for payment confirmation
-- [ ] Server-side token minting after payment
-- [ ] Auto-download on payment
-- [ ] Cashu token paste as fallback option
+- [x] Lightning invoice QR code on unlock page
+- [x] Server-side mint quote creation
+- [x] Auto-polling for payment confirmation
+- [x] Server-side token minting after payment
+- [x] Auto-download on payment
+- [x] Cashu token paste as fallback option
+- [x] Invoice expiry countdown + refresh
+- [x] `lightning:` deep link for mobile wallets
+- [x] Mint failure recovery
 
-### Phase 7: Payment Flexibility
+### Phase 8: Sovereignty Upgrades
+
+- [ ] Auto-settlement via Lightning address (save in settings, auto-withdraw on threshold)
+- [ ] Fee transparency (warn when fee > 10% of withdrawal)
+- [ ] Encrypted token storage (NIP-44 encrypt seller_token with seller's pubkey)
+- [ ] Browser-local wallet (move tokens client-side, delete from server)
+
+### Phase 9: Payment Flexibility
 
 - [ ] Multiple Cashu mints
 - [ ] WebLN integration
 - [ ] Nostr Wallet Connect
 - [ ] Split payments (revenue share)
 
-### Phase 8: Polish
+### Phase 10: Polish
 
 - [ ] Smart file previews
 - [x] Environment variables (API, CORS, Blossom)
@@ -131,7 +142,7 @@ npm run dev
 - [ ] Rate limiting
 - [ ] 404 error page
 
-### Phase 9: Discoverability
+### Phase 11: Discoverability
 
 - [ ] Nostr event publishing
 - [ ] NSFW content flagging

@@ -7,6 +7,7 @@ import {
   verifyAndSwapToken,
 } from '../lib/cashu.js';
 import type { PayInvoiceResponse, PayStatusResponse, APIResponse } from '../../../shared/types.js';
+import { tryAutoSettle } from '../lib/autosettle.js';
 
 export const payRoutes = new Hono();
 
@@ -131,6 +132,9 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       db.prepare(
         `UPDATE payments SET status = 'paid', seller_token = ?, paid_at = unixepoch() WHERE id = ?`
       ).run(swapResult.sellerToken, paymentId);
+
+      // Trigger auto-settlement check (fire-and-forget)
+      tryAutoSettle(stash.seller_pubkey).catch(() => {});
 
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,

@@ -156,3 +156,9 @@ export interface LnAddressResolveRequest {
 export interface LnAddressResolveResponse {
   invoice: string;
 }
+
+// GET/POST /api/settings
+export interface SellerSettings {
+  lnAddress: string;
+  autoWithdrawThreshold: number; // in sats, 0 = disabled
+}

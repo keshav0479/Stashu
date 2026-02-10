@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createHash } from 'crypto';
 import db from '../db/index.js';
 import { verifyAndSwapToken } from '../lib/cashu.js';
+import { tryAutoSettle } from '../lib/autosettle.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
 
 export const unlockRoutes = new Hono();
@@ -107,6 +108,9 @@ unlockRoutes.post('/:id', async (c) => {
       WHERE id = ?
     `
     ).run(swapResult.sellerToken, paymentId);
+
+    // Trigger auto-settlement check (fire-and-forget)
+    tryAutoSettle(stash.seller_pubkey).catch(() => {});
 
     // Return the secret key and blob URL
     return c.json<APIResponse<UnlockResponse>>({
