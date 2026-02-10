@@ -33,6 +33,7 @@ db.exec(`
     status TEXT DEFAULT 'pending',
     token_hash TEXT NOT NULL,
     seller_token TEXT,
+    claimed INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch()),
     paid_at INTEGER,
     FOREIGN KEY (stash_id) REFERENCES stashes(id)
@@ -41,5 +42,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_payments_stash ON payments(stash_id);
   CREATE INDEX IF NOT EXISTS idx_payments_seller ON stashes(seller_pubkey);
 `);
+
+// Migration: add claimed column if it doesn't exist (for existing DBs)
+try {
+  db.exec(`ALTER TABLE payments ADD COLUMN claimed INTEGER DEFAULT 0`);
+} catch {
+  // Column already exists, ignore
+}
+
+// Create index after migration ensures column exists
+db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_claimed ON payments(claimed)`);
 
 export default db;

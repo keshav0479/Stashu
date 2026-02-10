@@ -21,6 +21,20 @@ export interface SwapResult {
   error?: string;
 }
 
+export interface MeltQuoteResult {
+  success: boolean;
+  quote?: string;
+  feeSats?: number;
+  error?: string;
+}
+
+export interface MeltResult {
+  success: boolean;
+  preimage?: string;
+  feeSats?: number;
+  error?: string;
+}
+
 /**
  * Extract proofs from a decoded token (handles both v0 and v1 formats)
  */
@@ -94,5 +108,71 @@ export function getTokenValue(tokenString: string): number {
     return proofs.reduce((sum, proof) => sum + proof.amount, 0);
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Get a melt quote for a Lightning invoice
+ * Returns the fee estimate without executing the payment
+ */
+export async function getMeltQuote(invoice: string): Promise<MeltQuoteResult> {
+  try {
+    const w = await getWallet();
+    const quote = await w.createMeltQuote(invoice);
+
+    return {
+      success: true,
+      quote: quote.quote,
+      feeSats: quote.fee_reserve,
+    };
+  } catch (error) {
+    console.error('Melt quote error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get melt quote',
+    };
+  }
+}
+
+/**
+ * Melt aggregated Cashu tokens to pay a Lightning invoice
+ * @param tokens Array of encoded Cashu token strings
+ * @param invoice BOLT11 Lightning invoice to pay
+ */
+export async function meltToLightning(tokens: string[], invoice: string): Promise<MeltResult> {
+  try {
+    const w = await getWallet();
+
+    // Aggregate all proofs from all tokens by receiving them first
+    const allProofs = [];
+    for (const token of tokens) {
+      const proofs = await w.receive(token);
+      allProofs.push(...proofs);
+    }
+
+    // Get melt quote
+    const quote = await w.createMeltQuote(invoice);
+
+    // Execute melt (pay the invoice)
+    const result = await w.meltProofs(quote, allProofs);
+
+    if (result.quote.state !== 'PAID') {
+      return {
+        success: false,
+        error: 'Lightning payment failed',
+      };
+    }
+
+    return {
+      success: true,
+      preimage: result.quote.payment_preimage || '',
+      feeSats: quote.fee_reserve,
+    };
+  } catch (error) {
+    console.error('Melt error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Lightning withdrawal failed',
+    };
   }
 }

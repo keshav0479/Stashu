@@ -45,7 +45,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
       SELECT p.seller_token, s.price_sats
       FROM payments p
       JOIN stashes s ON p.stash_id = s.id
-      WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL
+      WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
     `);
 
     const tokenRows = tokensStmt.all(pubkey) as Array<{

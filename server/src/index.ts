@@ -5,6 +5,7 @@ import { stashRoutes } from './routes/stash.js';
 import { unlockRoutes } from './routes/unlock.js';
 import { earningsRoutes } from './routes/earnings.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { withdrawRoutes } from './routes/withdraw.js';
 
 const app = new Hono();
 
@@ -30,6 +31,7 @@ app.route('/api/stash', stashRoutes);
 app.route('/api/unlock', unlockRoutes);
 app.route('/api/earnings', earningsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
+app.route('/api/withdraw', withdrawRoutes);
 
 const port = 3000;
 console.log(`🐿️ Stashu server running on http://localhost:${port}`);

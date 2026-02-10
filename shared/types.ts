@@ -105,3 +105,27 @@ export interface DashboardResponse {
   stashes: SellerStashStats[];
   earnings: EarningsResponse;
 }
+
+// POST /api/withdraw/quote
+export interface WithdrawQuoteRequest {
+  pubkey: string;
+  invoice: string;
+}
+
+export interface WithdrawQuoteResponse {
+  totalSats: number;
+  feeSats: number;
+  netSats: number;
+}
+
+// POST /api/withdraw/execute
+export interface WithdrawRequest {
+  pubkey: string;
+  invoice: string;
+}
+
+export interface WithdrawResponse {
+  paid: boolean;
+  feeSats: number;
+  preimage: string;
+}

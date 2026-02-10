@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, XCircle, Copy, Lightbulb, Package, Squirrel, Settings } from 'lucide-react';
+import { BarChart3, XCircle, Copy, Package, Squirrel, Settings, Zap } from 'lucide-react';
 import { getDashboard } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
 import { copyToClipboard } from '../lib/clipboard';
+import { WithdrawModal } from './WithdrawModal';
 import type { DashboardResponse, SellerStashStats } from '../../../shared/types';
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-identity';
@@ -15,6 +16,7 @@ export function DashboardPage() {
   );
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -42,6 +44,16 @@ export function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  const refreshDashboard = async () => {
+    try {
+      const pubkey = getPublicKeyHex();
+      const dashboardData = await getDashboard(pubkey);
+      setData(dashboardData);
+    } catch {
+      // silently fail on refresh
+    }
+  };
 
   const copyAllTokens = async () => {
     if (!data?.earnings.tokens.length) return;
@@ -174,43 +186,24 @@ export function DashboardPage() {
             </div>
 
             {hasEarnings && (
-              <button
-                onClick={copyAllTokens}
-                className="w-full sm:w-auto py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                <Copy className="w-4 h-4" />
-                Copy All Tokens
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <button
+                  onClick={() => setShowWithdraw(true)}
+                  className="w-full sm:w-auto py-3 px-6 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Zap className="w-4 h-4" />
+                  Withdraw ⚡
+                </button>
+                <button
+                  onClick={copyAllTokens}
+                  className="w-full sm:w-auto py-3 px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy Tokens
+                </button>
+              </div>
             )}
           </div>
-
-          {/* Fee Tip */}
-          {hasEarnings && (
-            <div className="mt-6 bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-              <p className="text-slate-300 text-sm">
-                <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 inline mr-2" />
-                <strong>Tip:</strong> To convert to Lightning, paste tokens in{' '}
-                <a
-                  href="https://nutstash.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-400 underline"
-                >
-                  Nutstash
-                </a>{' '}
-                or{' '}
-                <a
-                  href="https://www.minibits.cash"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-400 underline"
-                >
-                  Minibits
-                </a>
-                , then melt to your Lightning wallet. Fee is usually 2-10 sats.
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Stashes List */}
@@ -284,6 +277,15 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Withdraw Modal */}
+      {showWithdraw && data && (
+        <WithdrawModal
+          totalSats={data.earnings.totalSats}
+          onClose={() => setShowWithdraw(false)}
+          onSuccess={refreshDashboard}
+        />
+      )}
     </div>
   );
 }
