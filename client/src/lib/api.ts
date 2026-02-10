@@ -10,6 +10,9 @@ import type {
   WithdrawQuoteResponse,
   WithdrawRequest,
   WithdrawResponse,
+  PayInvoiceResponse,
+  PayStatusResponse,
+  LnAddressResolveResponse,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -110,6 +113,60 @@ export async function executeWithdraw(pubkey: string, invoice: string): Promise<
   });
 
   const result: APIResponse<WithdrawResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Create a Lightning invoice for paying for a stash
+ */
+export async function createPayInvoice(stashId: string): Promise<PayInvoiceResponse> {
+  const response = await fetch(`${API_BASE}/pay/${stashId}/invoice`, {
+    method: 'POST',
+  });
+
+  const result: APIResponse<PayInvoiceResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Check payment status for a Lightning invoice
+ */
+export async function checkPayStatus(stashId: string, quoteId: string): Promise<PayStatusResponse> {
+  const response = await fetch(`${API_BASE}/pay/${stashId}/status/${quoteId}`);
+
+  const result: APIResponse<PayStatusResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Resolve a Lightning address (user@domain) to a BOLT11 invoice
+ */
+export async function resolveLnAddress(
+  address: string,
+  amountSats: number
+): Promise<LnAddressResolveResponse> {
+  const response = await fetch(`${API_BASE}/withdraw/resolve-address`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, amountSats }),
+  });
+
+  const result: APIResponse<LnAddressResolveResponse> = await response.json();
 
   if (!result.success) {
     throw new Error(result.error);

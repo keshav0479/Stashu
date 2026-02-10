@@ -1,11 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
+import { Zap, Key, Loader2, Copy, Check, RefreshCw, ExternalLink } from 'lucide-react';
 import { useUnlock } from '../lib/useUnlock';
+import { createPayInvoice, checkPayStatus } from '../lib/api';
+
+type PayTab = 'lightning' | 'cashu';
 
 export function UnlockPage() {
   const { id } = useParams<{ id: string }>();
   const unlock = useUnlock(id || '');
   const [token, setToken] = useState('');
+  const [tab, setTab] = useState<PayTab>('lightning');
+
+  // Lightning payment state
+  const [invoice, setInvoice] = useState<string | null>(null);
+  const [lnLoading, setLnLoading] = useState(false);
+  const [lnError, setLnError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -13,6 +28,115 @@ export function UnlockPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, unlock.loadStash]);
+
+  // Cleanup polling and timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const handleLnUnlock = useCallback(
+    (data: { secretKey: string; blobUrl: string; fileName?: string }) => {
+      // Use the unlock hook's internal mechanism to handle decryption
+      unlock.submitLightningResult(data);
+    },
+    [unlock]
+  );
+
+  const createInvoice = useCallback(async () => {
+    if (!id) return;
+    setLnLoading(true);
+    setLnError(null);
+
+    try {
+      const result = await createPayInvoice(id);
+      setInvoice(result.invoice);
+
+      // Start countdown timer
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        const remaining = result.expiresAt - Math.floor(Date.now() / 1000);
+        setTimeLeft(remaining > 0 ? remaining : 0);
+        if (remaining <= 0) {
+          // Invoice expired — stop polling
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+        }
+      }, 1000);
+
+      // Start polling
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await checkPayStatus(id, result.quoteId);
+          if (status.paid && status.secretKey && status.blobUrl) {
+            // Stop polling and timer
+            if (pollRef.current) clearInterval(pollRef.current);
+            if (timerRef.current) clearInterval(timerRef.current);
+            pollRef.current = null;
+            timerRef.current = null;
+            handleLnUnlock({
+              secretKey: status.secretKey,
+              blobUrl: status.blobUrl,
+              fileName: status.fileName,
+            });
+          }
+        } catch {
+          // Silently retry on next poll
+        }
+      }, 2500);
+    } catch (err) {
+      setLnError(err instanceof Error ? err.message : 'Failed to create invoice');
+    } finally {
+      setLnLoading(false);
+    }
+  }, [id, handleLnUnlock]);
+
+  // Auto-create invoice when Lightning tab is active and stash is loaded
+  useEffect(() => {
+    if (
+      tab === 'lightning' &&
+      unlock.stash &&
+      !invoice &&
+      !lnLoading &&
+      unlock.status === 'ready'
+    ) {
+      createInvoice();
+    }
+  }, [tab, unlock.stash, invoice, lnLoading, unlock.status, createInvoice]);
+
+  const refreshInvoice = () => {
+    setInvoice(null);
+    setTimeLeft(null);
+    setLnError(null);
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
+    createInvoice();
+  };
+
+  const formatCountdown = (seconds: number): string => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const copyInvoice = async () => {
+    if (!invoice) return;
+    try {
+      await navigator.clipboard.writeText(invoice);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -111,73 +235,211 @@ export function UnlockPage() {
           </div>
         </div>
 
-        {/* Token Input */}
-        <div className="mb-6">
-          <label className="block text-slate-300 mb-2 font-medium">Paste your Cashu token</label>
-          <textarea
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="cashuA..."
-            rows={4}
-            disabled={unlock.status === 'unlocking' || unlock.status === 'decrypting'}
-            className="w-full px-4 py-3 bg-slate-800 border border-slate-600 
-                     rounded-xl text-white placeholder-slate-500 font-mono text-sm
-                     focus:outline-none focus:border-orange-500 resize-none
-                     disabled:opacity-50"
-          />
-          <p className="text-slate-500 text-sm mt-2">
-            Get tokens from{' '}
-            <a
-              href="https://nutstash.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-orange-400 underline"
-            >
-              Nutstash
-            </a>{' '}
-            or{' '}
-            <a
-              href="https://www.minibits.cash"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-orange-400 underline"
-            >
-              Minibits
-            </a>
-          </p>
+        {/* Payment Tabs */}
+        <div className="flex mb-6 bg-slate-800/50 rounded-xl p-1">
+          <button
+            onClick={() => setTab('lightning')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all text-sm ${
+              tab === 'lightning'
+                ? 'bg-amber-500 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            Pay with Lightning
+          </button>
+          <button
+            onClick={() => setTab('cashu')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all text-sm ${
+              tab === 'cashu'
+                ? 'bg-orange-500 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Key className="w-4 h-4" />
+            Pay with Cashu
+          </button>
         </div>
 
-        {/* Error Display */}
+        {/* Lightning Tab */}
+        {tab === 'lightning' && (
+          <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
+            {lnLoading && !invoice && (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto mb-3" />
+                <p className="text-slate-400 text-sm">Creating Lightning invoice...</p>
+              </div>
+            )}
+
+            {lnError && (
+              <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 mb-4">
+                <p className="text-rose-400 text-sm">{lnError}</p>
+                <button onClick={createInvoice} className="mt-2 text-sm text-amber-400 underline">
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {invoice && (
+              <>
+                {/* QR Code */}
+                <div className="flex justify-center mb-4">
+                  <a
+                    href={`lightning:${invoice}`}
+                    className="bg-white p-4 rounded-2xl block hover:shadow-lg hover:shadow-amber-500/20 transition-shadow"
+                  >
+                    <QRCodeSVG
+                      value={invoice.toUpperCase()}
+                      size={240}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </a>
+                </div>
+
+                {/* Expiry countdown */}
+                {timeLeft !== null && timeLeft > 0 && (
+                  <p className="text-center text-slate-500 text-xs mb-3">
+                    Expires in{' '}
+                    <span className={timeLeft < 60 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+                      {formatCountdown(timeLeft)}
+                    </span>
+                  </p>
+                )}
+
+                {/* Expired state */}
+                {timeLeft !== null && timeLeft <= 0 && (
+                  <div className="text-center mb-4">
+                    <p className="text-rose-400 text-sm mb-2">Invoice expired</p>
+                    <button
+                      onClick={refreshInvoice}
+                      className="inline-flex items-center gap-2 py-2 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      New Invoice
+                    </button>
+                  </div>
+                )}
+
+                {/* Not expired — show action buttons */}
+                {(timeLeft === null || timeLeft > 0) && (
+                  <>
+                    <p className="text-center text-slate-400 text-sm mb-4">
+                      Scan with any Lightning wallet to pay
+                    </p>
+
+                    {/* Open in wallet + Copy buttons */}
+                    <div className="flex gap-2 mb-3">
+                      <a
+                        href={`lightning:${invoice}`}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 rounded-xl transition-colors text-sm text-amber-400 font-medium"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Open in Wallet
+                      </a>
+                      <button
+                        onClick={copyInvoice}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-slate-900 border border-slate-700 hover:border-amber-500/50 rounded-xl transition-colors text-sm"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-4 h-4 text-green-400" />
+                            <span className="text-green-400">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4 text-slate-400" />
+                            <span className="text-slate-400">Copy Invoice</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Waiting indicator */}
+                    <div className="flex items-center justify-center gap-2 text-amber-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Waiting for payment...
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Cashu Tab */}
+        {tab === 'cashu' && (
+          <>
+            <div className="mb-6">
+              <label className="block text-slate-300 mb-2 font-medium">
+                Paste your Cashu token
+              </label>
+              <textarea
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="cashuA..."
+                rows={4}
+                disabled={unlock.status === 'unlocking' || unlock.status === 'decrypting'}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 
+                         rounded-xl text-white placeholder-slate-500 font-mono text-sm
+                         focus:outline-none focus:border-orange-500 resize-none
+                         disabled:opacity-50"
+              />
+              <p className="text-slate-500 text-sm mt-2">
+                Get tokens from{' '}
+                <a
+                  href="https://nutstash.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-400 underline"
+                >
+                  Nutstash
+                </a>{' '}
+                or{' '}
+                <a
+                  href="https://www.minibits.cash"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-400 underline"
+                >
+                  Minibits
+                </a>
+              </p>
+            </div>
+
+            {/* Unlock Button */}
+            <button
+              onClick={() => unlock.submitToken(token)}
+              disabled={
+                !token.trim() || unlock.status === 'unlocking' || unlock.status === 'decrypting'
+              }
+              className="w-full py-4 px-6 bg-orange-500 hover:bg-orange-600 
+                       text-white font-bold text-lg rounded-xl transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {unlock.status === 'unlocking' || unlock.status === 'decrypting'
+                ? 'Processing...'
+                : `Unlock for ${unlock.stash?.priceSats} sats 🔓`}
+            </button>
+          </>
+        )}
+
+        {/* Error Display (shared) */}
         {unlock.error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+          <div className="mt-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
             <p className="text-red-400">{unlock.error}</p>
           </div>
         )}
 
-        {/* Progress Display */}
+        {/* Progress Display (shared) */}
         {(unlock.status === 'unlocking' || unlock.status === 'decrypting') && (
-          <div className="mb-6 bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
+          <div className="mt-6 bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
             <p className="text-orange-400 flex items-center gap-2">
               <span className="animate-spin">⚡</span>
               {unlock.status === 'unlocking' ? 'Verifying payment...' : 'Decrypting file...'}
             </p>
           </div>
         )}
-
-        {/* Unlock Button */}
-        <button
-          onClick={() => unlock.submitToken(token)}
-          disabled={
-            !token.trim() || unlock.status === 'unlocking' || unlock.status === 'decrypting'
-          }
-          className="w-full py-4 px-6 bg-orange-500 hover:bg-orange-600 
-                   text-white font-bold text-lg rounded-xl transition-colors
-                   disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {unlock.status === 'unlocking' || unlock.status === 'decrypting'
-            ? 'Processing...'
-            : `Unlock for ${unlock.stash?.priceSats} sats 🔓`}
-        </button>
       </div>
     </div>
   );

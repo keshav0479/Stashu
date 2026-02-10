@@ -97,6 +97,51 @@ export function useUnlock(stashId: string) {
     }
   }, [state.downloadUrl, state.fileName]);
 
+  /**
+   * Handle unlock from Lightning payment (bypasses token submission).
+   * Receives secretKey + blobUrl directly from the server polling response.
+   */
+  const submitLightningResult = useCallback(
+    async (data: { secretKey: string; blobUrl: string; fileName?: string }) => {
+      try {
+        setState((s) => ({ ...s, status: 'decrypting', error: null }));
+
+        // Fetch encrypted file from Blossom
+        const ciphertext = await fetchFromBlossom(data.blobUrl);
+
+        // Parse secret key (format: base64Nonce:base64Key)
+        const [nonceB64, keyB64] = data.secretKey.split(':');
+        if (!nonceB64 || !keyB64) {
+          throw new Error('Invalid secret key format');
+        }
+        const nonce = fromBase64(nonceB64);
+        const key = fromBase64(keyB64);
+
+        // Decrypt the file
+        const plaintext = await decryptFile(ciphertext, key, nonce);
+
+        // Create download URL
+        const blob = new Blob([plaintext]);
+        const downloadUrl = URL.createObjectURL(blob);
+        const fileName = data.fileName || state.stash?.title || 'download';
+
+        setState((s) => ({
+          ...s,
+          status: 'done',
+          downloadUrl,
+          fileName,
+        }));
+      } catch (error) {
+        setState((s) => ({
+          ...s,
+          status: 'ready',
+          error: error instanceof Error ? error.message : 'Decryption failed',
+        }));
+      }
+    },
+    [state.stash]
+  );
+
   const reset = useCallback(() => {
     if (state.downloadUrl) {
       URL.revokeObjectURL(state.downloadUrl);
@@ -114,6 +159,7 @@ export function useUnlock(stashId: string) {
     ...state,
     loadStash,
     submitToken,
+    submitLightningResult,
     download,
     reset,
   };

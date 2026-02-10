@@ -116,6 +116,7 @@ export interface WithdrawQuoteResponse {
   totalSats: number;
   feeSats: number;
   netSats: number;
+  invoiceAmountSats: number;
 }
 
 // POST /api/withdraw/execute
@@ -128,4 +129,30 @@ export interface WithdrawResponse {
   paid: boolean;
   feeSats: number;
   preimage: string;
+}
+
+// POST /api/pay/:id/invoice
+export interface PayInvoiceResponse {
+  invoice: string;
+  quoteId: string;
+  amountSats: number;
+  expiresAt: number; // unix timestamp
+}
+
+// GET /api/pay/:id/status/:quoteId
+export interface PayStatusResponse {
+  paid: boolean;
+  secretKey?: string;
+  blobUrl?: string;
+  fileName?: string;
+}
+
+// POST /api/withdraw/resolve-address
+export interface LnAddressResolveRequest {
+  address: string;
+  amountSats: number;
+}
+
+export interface LnAddressResolveResponse {
+  invoice: string;
 }

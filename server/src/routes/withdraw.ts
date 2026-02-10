@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { getMeltQuote, meltToLightning } from '../lib/cashu.js';
+import { resolveAddress } from '../lib/lnaddress.js';
 import type {
   WithdrawQuoteRequest,
   WithdrawQuoteResponse,
   WithdrawRequest,
   WithdrawResponse,
+  LnAddressResolveRequest,
+  LnAddressResolveResponse,
   APIResponse,
 } from '../../../shared/types.js';
 
@@ -54,6 +57,7 @@ withdrawRoutes.post('/quote', async (c) => {
     }
 
     const feeSats = quoteResult.feeSats || 0;
+    const invoiceAmountSats = quoteResult.amountSats || 0;
 
     return c.json<APIResponse<WithdrawQuoteResponse>>({
       success: true,
@@ -61,6 +65,7 @@ withdrawRoutes.post('/quote', async (c) => {
         totalSats,
         feeSats,
         netSats: totalSats - feeSats,
+        invoiceAmountSats,
       },
     });
   } catch (error) {
@@ -140,5 +145,43 @@ withdrawRoutes.post('/execute', async (c) => {
   } catch (error) {
     console.error('Error executing withdrawal:', error);
     return c.json<APIResponse<never>>({ success: false, error: 'Withdrawal failed' }, 500);
+  }
+});
+
+// POST /api/withdraw/resolve-address - Resolve a Lightning address to a BOLT11 invoice
+withdrawRoutes.post('/resolve-address', async (c) => {
+  try {
+    const body = await c.req.json<LnAddressResolveRequest>();
+
+    if (!body.address || !body.amountSats) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'address and amountSats are required' },
+        400
+      );
+    }
+
+    // Check if it's a Lightning address format (user@domain)
+    if (!body.address.includes('@')) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'Invalid Lightning address format. Expected user@domain.com' },
+        400
+      );
+    }
+
+    const invoice = await resolveAddress(body.address, body.amountSats);
+
+    return c.json<APIResponse<LnAddressResolveResponse>>({
+      success: true,
+      data: { invoice },
+    });
+  } catch (error) {
+    console.error('Error resolving Lightning address:', error);
+    return c.json<APIResponse<never>>(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to resolve Lightning address',
+      },
+      400
+    );
   }
 });

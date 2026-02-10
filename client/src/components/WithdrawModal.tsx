@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Zap, X, AlertTriangle, Check, Loader2 } from 'lucide-react';
-import { getWithdrawQuote, executeWithdraw } from '../lib/api';
+import { getWithdrawQuote, executeWithdraw, resolveLnAddress } from '../lib/api';
 import { getPublicKeyHex } from '../lib/identity';
 import { useToast } from './Toast';
 
@@ -15,6 +15,8 @@ type Step = 'input' | 'confirm' | 'processing' | 'done';
 export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalProps) {
   const [step, setStep] = useState<Step>('input');
   const [invoice, setInvoice] = useState('');
+  const [resolvedInvoice, setResolvedInvoice] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<{
     totalSats: number;
@@ -24,22 +26,78 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
   const [result, setResult] = useState<{ feeSats: number; preimage: string } | null>(null);
   const toast = useToast();
 
-  const handleGetQuote = async () => {
-    if (!invoice.trim()) {
-      setError('Please paste a Lightning invoice');
-      return;
-    }
+  const isLnAddress = (input: string) => input.includes('@') && input.includes('.');
 
-    if (!invoice.trim().toLowerCase().startsWith('lnbc')) {
-      setError('Invalid invoice. Must be a BOLT11 Lightning invoice (starts with lnbc)');
+  const handleGetQuote = async () => {
+    const input = invoice.trim();
+    if (!input) {
+      setError('Please paste a Lightning invoice or address');
       return;
     }
 
     setError(null);
+    let bolt11 = input;
+
+    if (isLnAddress(input)) {
+      // Lightning address flow: two-step resolution
+      // Step 1: Resolve for full balance to learn the fee
+      setResolving(true);
+      try {
+        const tempResolved = await resolveLnAddress(input, totalSats);
+        const pubkey = getPublicKeyHex();
+        const tempQuote = await getWithdrawQuote(pubkey, tempResolved.invoice);
+
+        const netAmount = totalSats - tempQuote.feeSats;
+        if (netAmount <= 0) {
+          setResolving(false);
+          setError(`Balance too low to cover the ${tempQuote.feeSats} sat network fee`);
+          return;
+        }
+
+        // Step 2: Re-resolve for the correct net amount
+        const finalResolved = await resolveLnAddress(input, netAmount);
+        bolt11 = finalResolved.invoice;
+        setResolvedInvoice(bolt11);
+
+        // Get final quote (fee may differ slightly for the smaller amount)
+        const finalQuote = await getWithdrawQuote(pubkey, bolt11);
+        setQuote(finalQuote);
+        setStep('confirm');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to resolve Lightning address');
+      } finally {
+        setResolving(false);
+      }
+      return;
+    }
+
+    // BOLT11 invoice flow
+    if (!input.toLowerCase().startsWith('lnbc')) {
+      setError(
+        'Invalid input. Enter a BOLT11 invoice (lnbc...) or Lightning address (user@domain.com)'
+      );
+      return;
+    }
 
     try {
       const pubkey = getPublicKeyHex();
-      const quoteData = await getWithdrawQuote(pubkey, invoice.trim());
+      const quoteData = await getWithdrawQuote(pubkey, bolt11);
+
+      // Validate: invoice amount + fee must not exceed balance
+      const needed = quoteData.invoiceAmountSats + quoteData.feeSats;
+      if (needed > quoteData.totalSats) {
+        const maxWithdrawable = quoteData.totalSats - quoteData.feeSats;
+        if (maxWithdrawable <= 0) {
+          setError(`Balance too low to cover the ${quoteData.feeSats} sat network fee`);
+        } else {
+          setError(
+            `Invoice is for ${quoteData.invoiceAmountSats} sats, but with the ${quoteData.feeSats} sat fee you need ${needed} sats total. ` +
+              `You only have ${quoteData.totalSats}. Create an invoice for at most ${maxWithdrawable} sats.`
+          );
+        }
+        return;
+      }
+
       setQuote(quoteData);
       setStep('confirm');
     } catch (err) {
@@ -53,7 +111,9 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
 
     try {
       const pubkey = getPublicKeyHex();
-      const withdrawResult = await executeWithdraw(pubkey, invoice.trim());
+      // Use resolved invoice (from Lightning address) if available, otherwise raw input
+      const bolt11 = resolvedInvoice || invoice.trim();
+      const withdrawResult = await executeWithdraw(pubkey, bolt11);
       setResult({
         feeSats: withdrawResult.feeSats,
         preimage: withdrawResult.preimage,
@@ -105,17 +165,17 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
             </div>
 
             <label className="block text-sm font-medium text-slate-300 mb-2">
-              BOLT11 Lightning Invoice
+              Lightning Invoice or Address
             </label>
             <textarea
               value={invoice}
               onChange={(e) => setInvoice(e.target.value)}
-              placeholder="lnbc..."
-              rows={4}
+              placeholder="lnbc... or user@walletofsatoshi.com"
+              rows={3}
               className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-amber-400 font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500 resize-none mb-2"
             />
             <p className="text-slate-500 text-xs mb-4">
-              Create an invoice in your Lightning wallet for the amount you want to withdraw.
+              Paste a BOLT11 invoice or a Lightning address (e.g. you@walletofsatoshi.com)
             </p>
 
             {error && (
@@ -126,14 +186,21 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
 
             <button
               onClick={handleGetQuote}
-              disabled={!invoice.trim()}
+              disabled={!invoice.trim() || resolving}
               className={`w-full py-3 rounded-xl font-semibold transition-all ${
-                !invoice.trim()
+                !invoice.trim() || resolving
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   : 'bg-amber-500 hover:bg-amber-600 text-white'
               }`}
             >
-              Get Fee Estimate
+              {resolving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Resolving address...
+                </span>
+              ) : (
+                'Get Fee Estimate'
+              )}
             </button>
           </>
         )}

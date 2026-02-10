@@ -25,6 +25,7 @@ export interface MeltQuoteResult {
   success: boolean;
   quote?: string;
   feeSats?: number;
+  amountSats?: number;
   error?: string;
 }
 
@@ -124,6 +125,7 @@ export async function getMeltQuote(invoice: string): Promise<MeltQuoteResult> {
       success: true,
       quote: quote.quote,
       feeSats: quote.fee_reserve,
+      amountSats: quote.amount,
     };
   } catch (error) {
     console.error('Melt quote error:', error);
@@ -143,15 +145,27 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
   try {
     const w = await getWallet();
 
-    // Aggregate all proofs from all tokens by receiving them first
-    const allProofs = [];
+    // Extract proofs directly from tokens (they are already valid proofs on this mint)
+    // Do NOT call w.receive() — that would try to re-swap already-owned proofs
+    const allProofs: any[] = [];
     for (const token of tokens) {
-      const proofs = await w.receive(token);
+      const decoded = getDecodedToken(token);
+      const proofs = getProofsFromToken(decoded);
       allProofs.push(...proofs);
     }
 
+    const totalValue = allProofs.reduce((sum: number, p: any) => sum + p.amount, 0);
+
     // Get melt quote
     const quote = await w.createMeltQuote(invoice);
+    const needed = quote.amount + quote.fee_reserve;
+
+    if (totalValue < needed) {
+      return {
+        success: false,
+        error: `Not enough balance. You have ${totalValue} sats but need ${needed} sats (${quote.amount} + ${quote.fee_reserve} fee)`,
+      };
+    }
 
     // Execute melt (pay the invoice)
     const result = await w.meltProofs(quote, allProofs);
@@ -175,4 +189,53 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
       error: error instanceof Error ? error.message : 'Lightning withdrawal failed',
     };
   }
+}
+
+/**
+ * Create a Lightning invoice for a buyer to pay via the Cashu mint
+ * @param amountSats Amount in satoshis
+ * @returns Lightning invoice string and quote ID for polling
+ */
+export async function createPaymentInvoice(
+  amountSats: number
+): Promise<{ invoice: string; quoteId: string; expiresAt: number }> {
+  const w = await getWallet();
+  const quote = await w.createMintQuote(amountSats);
+  return {
+    invoice: quote.request,
+    quoteId: quote.quote,
+    expiresAt: quote.expiry,
+  };
+}
+
+/**
+ * Check if a mint quote has been paid
+ * @param quoteId The quote ID from createPaymentInvoice
+ * @returns Whether the invoice has been paid
+ */
+export async function checkPaymentStatus(
+  quoteId: string
+): Promise<{ paid: boolean; issued: boolean }> {
+  const w = await getWallet();
+  const quote = await w.checkMintQuote(quoteId);
+  return {
+    paid: quote.state === 'PAID' || quote.state === 'ISSUED',
+    issued: quote.state === 'ISSUED',
+  };
+}
+
+/**
+ * Mint new Cashu tokens after a Lightning invoice has been paid
+ * @param amountSats Amount that was paid
+ * @param quoteId The quote ID from createPaymentInvoice
+ * @returns Encoded Cashu token
+ */
+export async function mintAfterPayment(amountSats: number, quoteId: string): Promise<string> {
+  const w = await getWallet();
+  const proofs = await w.mintProofs(amountSats, quoteId);
+
+  return getEncodedTokenV4({
+    mint: MINT_URL,
+    proofs,
+  });
 }
