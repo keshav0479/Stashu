@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, XCircle, Copy, Package, Squirrel, Settings, Zap, History } from 'lucide-react';
+import {
+  BarChart3,
+  XCircle,
+  Copy,
+  Package,
+  Squirrel,
+  Settings,
+  Zap,
+  History,
+  Link as LinkIcon,
+} from 'lucide-react';
 import { getDashboard, getSettlements } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
 import { useToast } from './Toast';
@@ -166,6 +176,11 @@ export function DashboardPage() {
   const hasEarnings = data && data.earnings.totalSats > 0;
   const hasStashes = data && data.stashes.length > 0;
 
+  // Calculate Gross Revenue (sum of all stash earnings)
+  const totalRevenue = data?.stashes.reduce((sum, s) => sum + s.totalEarned, 0) || 0;
+  // Current Balance (unclaimed)
+  const availableBalance = data?.earnings.totalSats || 0;
+
   return (
     <div className="min-h-screen bg-slate-900 py-12 px-6">
       <div className="max-w-4xl mx-auto">
@@ -199,48 +214,71 @@ export function DashboardPage() {
 
         {/* Earnings Card */}
         <div className="relative bg-linear-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/30 rounded-2xl p-8 mb-8">
-          <button
-            onClick={() => setShowHistory(true)}
-            className="absolute top-4 right-4 p-2 text-orange-300/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-            title="View Settlement History"
-          >
-            <History className="w-5 h-5" />
-          </button>
+          <div className="flex flex-col gap-8">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-8 sm:gap-0">
+              <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-12 w-full sm:w-auto">
+                <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-orange-300 text-sm font-medium">Total Revenue</p>
+                    <button
+                      onClick={() => setShowHistory(true)}
+                      className="p-1 text-orange-300/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      title="View Settlement History"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-white">
+                      {totalRevenue.toLocaleString()}
+                    </span>
+                    <span className="text-xl text-orange-400">sats</span>
+                  </div>
+                </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 sm:gap-0">
-            <div className="text-center sm:text-left w-full sm:w-auto">
-              <p className="text-orange-300 text-sm font-medium mb-1">Total Earnings</p>
-              <div className="flex items-baseline justify-center sm:justify-start gap-2">
-                <span className="text-4xl font-bold text-white">
-                  {data!.earnings.totalSats.toLocaleString()}
-                </span>
-                <span className="text-xl text-orange-400">sats</span>
+                <div className="hidden sm:block w-px h-12 bg-white/10" />
+                <div className="block sm:hidden w-16 h-px bg-white/10" />
+
+                <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+                  <p className="text-slate-400 text-sm font-medium mb-1">Available Balance</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-200">
+                      {availableBalance.toLocaleString()}
+                    </span>
+                    <span className="text-sm text-slate-500">sats</span>
+                  </div>
+                  {hasEarnings && (
+                    <p className="text-slate-500 text-xs mt-1">
+                      {data!.earnings.tokens.length} unclaimed token(s)
+                    </p>
+                  )}
+                </div>
               </div>
-              {hasEarnings && (
-                <p className="text-slate-400 text-sm mt-2">
-                  {data!.earnings.tokens.length} unclaimed token(s)
-                </p>
+
+              {totalRevenue > 0 && (
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                  <button
+                    onClick={() => setShowWithdraw(true)}
+                    disabled={availableBalance === 0}
+                    className="w-full sm:w-auto py-3 px-6 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Zap
+                      className={`w-4 h-4 ${availableBalance === 0 ? 'text-slate-500' : 'text-white'}`}
+                    />
+                    Withdraw
+                  </button>
+                  {data!.earnings.tokens.length > 0 && (
+                    <button
+                      onClick={copyAllTokens}
+                      className="w-full sm:w-auto py-3 px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Copy className="w-4 h-4" />
+                      Copy Tokens
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-
-            {hasEarnings && (
-              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                <button
-                  onClick={() => setShowWithdraw(true)}
-                  className="w-full sm:w-auto py-3 px-6 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  <Zap className="w-4 h-4" />
-                  Withdraw ⚡
-                </button>
-                <button
-                  onClick={copyAllTokens}
-                  className="w-full sm:w-auto py-3 px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  <Copy className="w-4 h-4" />
-                  Copy Tokens
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -303,9 +341,10 @@ export function DashboardPage() {
                             toast.showToast('Failed to copy link', 'error');
                           }
                         }}
-                        className="py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors text-sm whitespace-nowrap"
+                        className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                        title="Copy Link"
                       >
-                        Copy Link
+                        <LinkIcon className="w-5 h-5 text-slate-300" />
                       </button>
                     </div>
                   </div>

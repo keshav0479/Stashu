@@ -78,7 +78,7 @@ withdrawRoutes.post('/quote', async (c) => {
 withdrawRoutes.post('/execute', async (c) => {
   try {
     const pubkey = c.get('authedPubkey');
-    const body = await c.req.json<{ invoice: string }>();
+    const body = await c.req.json<{ invoice: string; lnAddress?: string }>();
 
     if (!body.invoice) {
       return c.json<APIResponse<never>>({ success: false, error: 'invoice is required' }, 400);
@@ -116,10 +116,13 @@ withdrawRoutes.post('/execute', async (c) => {
 
     if (!meltResult.success) {
       // Log failed manual withdrawal
+      const destination =
+        body.lnAddress ||
+        `${body.invoice.substring(0, 10)}...${body.invoice.substring(body.invoice.length - 10)}`;
       db.prepare(
-        `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, error)
-         VALUES (?, 'failed', ?, ?)`
-      ).run(pubkey, totalSats, meltResult.error || 'Lightning withdrawal failed');
+        `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, error, ln_address)
+         VALUES (?, 'failed', ?, ?, ?)`
+      ).run(pubkey, totalSats, meltResult.error || 'Lightning withdrawal failed', destination);
 
       return c.json<APIResponse<never>>(
         { success: false, error: meltResult.error || 'Lightning withdrawal failed' },
@@ -139,10 +142,14 @@ withdrawRoutes.post('/execute', async (c) => {
     // Log successful manual withdrawal
     const feeSats = meltResult.feeSats || 0;
     const netSats = totalSats - feeSats;
+    const destination =
+      body.lnAddress ||
+      `${body.invoice.substring(0, 10)}...${body.invoice.substring(body.invoice.length - 10)}`;
+
     db.prepare(
-      `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, fee_sats, net_sats)
-       VALUES (?, 'success', ?, ?, ?)`
-    ).run(pubkey, totalSats, feeSats, netSats);
+      `INSERT INTO settlement_log (seller_pubkey, status, amount_sats, fee_sats, net_sats, ln_address)
+       VALUES (?, 'success', ?, ?, ?, ?)`
+    ).run(pubkey, totalSats, feeSats, netSats, destination);
 
     return c.json<APIResponse<WithdrawResponse>>({
       success: true,

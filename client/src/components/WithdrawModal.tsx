@@ -23,7 +23,11 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
     feeSats: number;
     netSats: number;
   } | null>(null);
-  const [result, setResult] = useState<{ feeSats: number; preimage: string } | null>(null);
+  const [result, setResult] = useState<{
+    feeSats: number;
+    preimage: string;
+    destination: string;
+  } | null>(null);
   const toast = useToast();
 
   const isLnAddress = (input: string) => input.includes('@') && input.includes('.');
@@ -111,12 +115,22 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
 
     try {
       const pubkey = getPublicKeyHex();
+      const input = invoice.trim();
       // Use resolved invoice (from Lightning address) if available, otherwise raw input
-      const bolt11 = resolvedInvoice || invoice.trim();
-      const withdrawResult = await executeWithdraw(pubkey, bolt11);
+      const bolt11 = resolvedInvoice || input;
+      // If input was an address, pass it. Otherwise undefined.
+      const lnAddress = isLnAddress(input) ? input : undefined;
+
+      const withdrawResult = await executeWithdraw(pubkey, bolt11, lnAddress);
+
+      // If no LN address, use truncated invoice as destination
+      const destination =
+        lnAddress || `${bolt11.substring(0, 12)}...${bolt11.substring(bolt11.length - 12)}`;
+
       setResult({
         feeSats: withdrawResult.feeSats,
         preimage: withdrawResult.preimage,
+        destination,
       });
       setStep('done');
       toast.showToast('⚡ Withdrawal successful!', 'success');
@@ -170,7 +184,7 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
             <textarea
               value={invoice}
               onChange={(e) => setInvoice(e.target.value)}
-              placeholder="lnbc... or user@walletofsatoshi.com"
+              placeholder="lnbc... or user@domain.com"
               rows={3}
               className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-amber-400 font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500 resize-none mb-2"
             />
@@ -238,11 +252,11 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
               </div>
             )}
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6">
-              <p className="text-amber-300 text-sm flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                This will withdraw <strong>all</strong> your unclaimed earnings. This cannot be
-                undone.
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-300" />
+              <p className="text-amber-300 text-sm">
+                This will withdraw <strong>all</strong> your unclaimed earnings. This action cannot
+                be undone.
               </p>
             </div>
 
@@ -284,12 +298,18 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
             <div className="w-16 h-16 mx-auto mb-4 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
               <Check className="w-8 h-8 text-emerald-400" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-2">Withdrawn! ⚡</h3>
+            <h3 className="text-2xl font-bold text-white mb-2">Withdrawn!</h3>
             <p className="text-slate-400 mb-6">
               Your sats are on their way to your Lightning wallet.
             </p>
 
             <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6 text-left">
+              <div className="text-sm mb-2">
+                <span className="text-slate-400">Sent to</span>
+                <p className="text-slate-300 font-mono text-xs break-all mt-1">
+                  {result.destination}
+                </p>
+              </div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-slate-400">Fee paid</span>
                 <span className="text-slate-300">{result.feeSats} sats</span>

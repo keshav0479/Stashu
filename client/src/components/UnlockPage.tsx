@@ -1,7 +1,20 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { Zap, Key, Loader2, Copy, Check, RefreshCw, ExternalLink } from 'lucide-react';
+import {
+  Zap,
+  Key,
+  Loader2,
+  Copy,
+  Check,
+  RefreshCw,
+  ExternalLink,
+  Squirrel,
+  XCircle,
+  LockOpen,
+  Package,
+  Download,
+} from 'lucide-react';
 import { useUnlock } from '../lib/useUnlock';
 import { createPayInvoice, checkPayStatus } from '../lib/api';
 
@@ -45,22 +58,24 @@ export function UnlockPage() {
     [unlock]
   );
 
-  const createInvoice = useCallback(async () => {
-    if (!id) return;
-    setLnLoading(true);
-    setLnError(null);
+  // Helper: start timer + polling for a given invoice session
+  const startTimerAndPolling = useCallback(
+    (invoiceStr: string, quoteId: string, expiresAt: number) => {
+      setInvoice(invoiceStr);
 
-    try {
-      const result = await createPayInvoice(id);
-      setInvoice(result.invoice);
+      if (id) {
+        sessionStorage.setItem(
+          `stashu-invoice-${id}`,
+          JSON.stringify({ invoice: invoiceStr, quoteId, expiresAt })
+        );
+      }
 
       // Start countdown timer
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        const remaining = result.expiresAt - Math.floor(Date.now() / 1000);
+        const remaining = expiresAt - Math.floor(Date.now() / 1000);
         setTimeLeft(remaining > 0 ? remaining : 0);
         if (remaining <= 0) {
-          // Invoice expired — stop polling
           if (pollRef.current) {
             clearInterval(pollRef.current);
             pollRef.current = null;
@@ -69,19 +84,21 @@ export function UnlockPage() {
             clearInterval(timerRef.current);
             timerRef.current = null;
           }
+          if (id) sessionStorage.removeItem(`stashu-invoice-${id}`);
         }
       }, 1000);
 
       // Start polling
+      if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
         try {
-          const status = await checkPayStatus(id, result.quoteId);
+          const status = await checkPayStatus(id!, quoteId);
           if (status.paid && status.secretKey && status.blobUrl) {
-            // Stop polling and timer
             if (pollRef.current) clearInterval(pollRef.current);
             if (timerRef.current) clearInterval(timerRef.current);
             pollRef.current = null;
             timerRef.current = null;
+            if (id) sessionStorage.removeItem(`stashu-invoice-${id}`);
             handleLnUnlock({
               secretKey: status.secretKey,
               blobUrl: status.blobUrl,
@@ -92,25 +109,63 @@ export function UnlockPage() {
           // Silently retry on next poll
         }
       }, 2500);
+    },
+    [id, handleLnUnlock]
+  );
+
+  const createInvoice = useCallback(async () => {
+    if (!id) return;
+    setLnLoading(true);
+    setLnError(null);
+
+    try {
+      const result = await createPayInvoice(id);
+      startTimerAndPolling(result.invoice, result.quoteId, result.expiresAt);
     } catch (err) {
       setLnError(err instanceof Error ? err.message : 'Failed to create invoice');
     } finally {
       setLnLoading(false);
     }
-  }, [id, handleLnUnlock]);
+  }, [id, startTimerAndPolling]);
 
-  // Auto-create invoice when Lightning tab is active and stash is loaded
+  // Auto-create or resume invoice when Lightning tab is active and stash is loaded
   useEffect(() => {
-    if (
-      tab === 'lightning' &&
-      unlock.stash &&
-      !invoice &&
-      !lnLoading &&
-      unlock.status === 'ready'
-    ) {
-      createInvoice();
+    if (tab !== 'lightning' || !unlock.stash || invoice || lnLoading || unlock.status !== 'ready') {
+      return;
     }
-  }, [tab, unlock.stash, invoice, lnLoading, unlock.status, createInvoice]);
+
+    // Try to resume a persisted invoice from sessionStorage
+    if (id) {
+      try {
+        const saved = sessionStorage.getItem(`stashu-invoice-${id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const remaining = parsed.expiresAt - Math.floor(Date.now() / 1000);
+          if (remaining > 10) {
+            // Resume polling the existing invoice
+            startTimerAndPolling(parsed.invoice, parsed.quoteId, parsed.expiresAt);
+            return;
+          } else {
+            // Expired — clean up
+            sessionStorage.removeItem(`stashu-invoice-${id}`);
+          }
+        }
+      } catch {
+        // Corrupted storage — ignore
+      }
+    }
+
+    createInvoice();
+  }, [
+    tab,
+    unlock.stash,
+    invoice,
+    lnLoading,
+    unlock.status,
+    id,
+    createInvoice,
+    startTimerAndPolling,
+  ]);
 
   const refreshInvoice = () => {
     setInvoice(null);
@@ -118,10 +173,17 @@ export function UnlockPage() {
     setLnError(null);
     if (pollRef.current) clearInterval(pollRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
+    if (id) sessionStorage.removeItem(`stashu-invoice-${id}`);
     createInvoice();
   };
 
   const formatCountdown = (seconds: number): string => {
+    if (seconds >= 3600) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
@@ -149,7 +211,9 @@ export function UnlockPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-5xl mb-4 animate-pulse">🐿️</div>
+          <div className="w-16 h-16 mx-auto mb-4 bg-amber-500/20 rounded-2xl flex items-center justify-center animate-pulse">
+            <Squirrel className="w-8 h-8 text-amber-400" />
+          </div>
           <p className="text-slate-400">Loading stash...</p>
         </div>
       </div>
@@ -161,7 +225,9 @@ export function UnlockPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-6">❌</div>
+          <div className="w-20 h-20 mx-auto mb-6 bg-rose-500/20 rounded-2xl flex items-center justify-center">
+            <XCircle className="w-10 h-10 text-rose-400" />
+          </div>
           <h1 className="text-2xl font-bold text-white mb-4">Stash Not Found</h1>
           <p className="text-slate-400 mb-8">
             {unlock.error || 'This stash may have been removed or the link is invalid.'}
@@ -182,15 +248,18 @@ export function UnlockPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="max-w-lg w-full text-center">
-          <div className="text-6xl mb-6">🎉</div>
+          <div className="w-20 h-20 mx-auto mb-6 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
+            <LockOpen className="w-10 h-10 text-emerald-400" />
+          </div>
           <h1 className="text-3xl font-bold text-white mb-4">Unlocked!</h1>
           <p className="text-slate-400 mb-8">Your file is ready to download.</p>
 
           <button
             onClick={() => unlock.download()}
-            className="w-full py-4 px-6 bg-green-500 hover:bg-green-600 text-white font-bold text-lg rounded-xl transition-colors mb-4"
+            className="w-full py-4 px-6 bg-green-500 hover:bg-green-600 text-white font-bold text-lg rounded-xl transition-colors mb-4 flex items-center justify-center gap-2"
           >
-            Download File 📥
+            <Download className="w-5 h-5" />
+            Download File
           </button>
 
           <Link to="/" className="block text-slate-400 hover:text-white transition-colors">
@@ -215,7 +284,9 @@ export function UnlockPage() {
 
         {/* Stash Info Card */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 mb-8">
-          <div className="text-5xl mb-4 text-center">📦</div>
+          <div className="w-16 h-16 mx-auto mb-4 bg-orange-500/20 rounded-2xl flex items-center justify-center">
+            <Package className="w-8 h-8 text-orange-400" />
+          </div>
           <h1 className="text-2xl font-bold text-white text-center mb-2">{unlock.stash?.title}</h1>
           {unlock.stash?.description && (
             <p className="text-slate-400 text-center mb-6">{unlock.stash.description}</p>
@@ -419,7 +490,7 @@ export function UnlockPage() {
             >
               {unlock.status === 'unlocking' || unlock.status === 'decrypting'
                 ? 'Processing...'
-                : `Unlock for ${unlock.stash?.priceSats} sats 🔓`}
+                : `Unlock for ${unlock.stash?.priceSats} sats`}
             </button>
           </>
         )}
@@ -433,11 +504,30 @@ export function UnlockPage() {
 
         {/* Progress Display (shared) */}
         {(unlock.status === 'unlocking' || unlock.status === 'decrypting') && (
-          <div className="mt-6 bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
-            <p className="text-orange-400 flex items-center gap-2">
-              <span className="animate-spin">⚡</span>
-              {unlock.status === 'unlocking' ? 'Verifying payment...' : 'Decrypting file...'}
-            </p>
+          <div
+            ref={(el) => el?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            className="mt-6 bg-slate-800/50 border border-orange-500/30 rounded-xl p-5"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center">
+                <Key className="w-5 h-5 text-orange-400 animate-pulse" />
+              </div>
+              <div>
+                <p className="text-white font-medium text-sm">
+                  {unlock.status === 'unlocking' ? 'Verifying payment...' : 'Decrypting file...'}
+                </p>
+                <p className="text-slate-500 text-xs">This may take a moment</p>
+              </div>
+            </div>
+            <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-linear-to-r from-orange-500 via-amber-400 to-orange-500 rounded-full animate-pulse"
+                style={{
+                  width: unlock.status === 'decrypting' ? '80%' : '40%',
+                  transition: 'width 1s ease-in-out',
+                }}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { PartyPopper, Squirrel } from 'lucide-react';
 import { FileUploader } from './FileUploader';
 import { RecoveryTokenModal } from './RecoveryTokenModal';
 import { useToast } from './Toast';
@@ -68,7 +69,9 @@ export function SellPage() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="max-w-lg w-full text-center">
-          <div className="text-6xl mb-6">🎉</div>
+          <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/20 rounded-2xl flex items-center justify-center">
+            <PartyPopper className="w-10 h-10 text-amber-400" />
+          </div>
           <h1 className="text-3xl font-bold text-white mb-4">Stash Created!</h1>
           <p className="text-slate-400 mb-8">Share this link with buyers:</p>
 
@@ -207,7 +210,14 @@ export function SellPage() {
                    text-white font-bold text-lg rounded-xl transition-colors
                    disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {stash.status === 'idle' ? 'Create Stash 🐿️' : 'Processing...'}
+          {stash.status === 'idle' ? (
+            <>
+              <Squirrel className="w-5 h-5 inline-block mr-1" />
+              Create Stash
+            </>
+          ) : (
+            'Processing...'
+          )}
         </button>
       </div>
     </div>

@@ -113,7 +113,11 @@ export async function getWithdrawQuote(
 /**
  * Execute a Lightning withdrawal
  */
-export async function executeWithdraw(_pubkey: string, invoice: string): Promise<WithdrawResponse> {
+export async function executeWithdraw(
+  _pubkey: string,
+  invoice: string,
+  lnAddress?: string
+): Promise<WithdrawResponse> {
   const url = `${API_BASE}/withdraw/execute`;
   const response = await fetch(url, {
     method: 'POST',
@@ -121,7 +125,7 @@ export async function executeWithdraw(_pubkey: string, invoice: string): Promise
       'Content-Type': 'application/json',
       Authorization: createAuthHeader(url, 'POST'),
     },
-    body: JSON.stringify({ invoice }),
+    body: JSON.stringify({ invoice, lnAddress }),
   });
 
   const result: APIResponse<WithdrawResponse> = await response.json();
