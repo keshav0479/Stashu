@@ -58,8 +58,18 @@ export function DashboardPage() {
 
     loadDashboard();
     loadSettlements();
+
+    // Poll for updates every 30 seconds
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadDashboard();
+        loadSettlements();
+      }
+    }, 30_000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 
