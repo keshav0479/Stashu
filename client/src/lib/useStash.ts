@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { encryptFile, readFileAsArrayBuffer, toBase64 } from './crypto';
 import { uploadToBlossom } from './blossom';
-import { getPublicKey, encryptToSelf } from './nostr';
+import { getPublicKey } from './nostr';
 import { createStash } from './api';
 import { hasIdentity, hasAcknowledgedRecovery } from './identity';
 
@@ -41,14 +41,6 @@ export function useStash() {
       const { ciphertext, nonce, key } = await encryptFile(fileData);
       const secretKey = `${toBase64(nonce)}:${toBase64(key)}`;
 
-      setState((s) => ({ ...s, progress: 40 }));
-      let keyBackup: string | undefined;
-      try {
-        keyBackup = encryptToSelf(secretKey);
-      } catch {
-        // Optional
-      }
-
       setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
       const uploadResult = await uploadToBlossom(ciphertext, file.type);
 
@@ -56,7 +48,6 @@ export function useStash() {
       const stashResult = await createStash({
         blobUrl: uploadResult.url,
         secretKey,
-        keyBackup,
         sellerPubkey: pubkey,
         priceSats: options.priceSats,
         title: options.title,

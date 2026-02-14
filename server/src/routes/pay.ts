@@ -28,6 +28,11 @@ payRoutes.post('/:id/invoice', async (c) => {
     // Create a Lightning invoice via the Cashu mint
     const { invoice, quoteId, expiresAt } = await createPaymentInvoice(stash.price_sats);
 
+    // Bind quoteId → stashId immediately (prevents cross-stash replay)
+    db.prepare(
+      `INSERT INTO payments (id, stash_id, status, token_hash) VALUES (?, ?, 'pending', ?)`
+    ).run(`ln-${quoteId}`, stashId, quoteId);
+
     return c.json<APIResponse<PayInvoiceResponse>>({
       success: true,
       data: {
@@ -49,14 +54,26 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
   try {
     const stashId = c.req.param('id');
     const quoteId = c.req.param('quoteId');
+    const paymentId = `ln-${quoteId}`;
 
-    // Check if we already processed this quote (idempotency)
-    const existingPayment = db
-      .prepare('SELECT * FROM payments WHERE id = ?')
-      .get(`ln-${quoteId}`) as any;
+    // Look up the quote binding (created at invoice time)
+    const existingPayment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId) as any;
 
-    if (existingPayment?.status === 'paid') {
-      // Already processed — return the unlock data
+    // Reject if no binding exists (quote was not created through our API)
+    if (!existingPayment) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Unknown quote' }, 404);
+    }
+
+    // Enforce quoteId → stashId binding (anti-replay, checked on EVERY poll)
+    if (existingPayment.stash_id !== stashId) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'Quote does not match this stash' },
+        403
+      );
+    }
+
+    // Already processed — return the unlock data
+    if (existingPayment.status === 'paid') {
       const stash = db
         .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
         .get(stashId) as any;
@@ -84,33 +101,13 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     // Payment confirmed! Get stash details
     const stash = db
-      .prepare('SELECT id, price_sats, secret_key, blob_url, file_name FROM stashes WHERE id = ?')
+      .prepare(
+        'SELECT id, price_sats, secret_key, blob_url, file_name, seller_pubkey FROM stashes WHERE id = ?'
+      )
       .get(stashId) as any;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
-    }
-
-    // Create pending payment record (use ln- prefix for Lightning payments)
-    const paymentId = `ln-${quoteId}`;
-    try {
-      db.prepare(
-        `INSERT INTO payments (id, stash_id, status, token_hash) VALUES (?, ?, 'pending', ?)`
-      ).run(paymentId, stashId, quoteId);
-    } catch {
-      // Payment record might already exist from a concurrent request
-      const existing = db.prepare('SELECT status FROM payments WHERE id = ?').get(paymentId) as any;
-      if (existing?.status === 'paid') {
-        return c.json<APIResponse<PayStatusResponse>>({
-          success: true,
-          data: {
-            paid: true,
-            secretKey: stash.secret_key,
-            blobUrl: stash.blob_url,
-            fileName: stash.file_name,
-          },
-        });
-      }
     }
 
     try {

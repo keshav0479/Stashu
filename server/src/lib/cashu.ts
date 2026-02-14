@@ -33,6 +33,7 @@ export interface MeltResult {
   success: boolean;
   preimage?: string;
   feeSats?: number;
+  changeToken?: string; //(excess sats returned by mint)
   error?: string;
 }
 
@@ -140,6 +141,7 @@ export async function getMeltQuote(invoice: string): Promise<MeltQuoteResult> {
  * Melt aggregated Cashu tokens to pay a Lightning invoice
  * @param tokens Array of encoded Cashu token strings
  * @param invoice BOLT11 Lightning invoice to pay
+ * @returns MeltResult including any change token (excess sats returned by mint)
  */
 export async function meltToLightning(tokens: string[], invoice: string): Promise<MeltResult> {
   try {
@@ -177,10 +179,24 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
       };
     }
 
+    // Persist change proofs if the mint returned excess sats
+    let changeToken: string | undefined;
+    if (result.change && result.change.length > 0) {
+      const changeSats = result.change.reduce((sum: number, p: any) => sum + p.amount, 0);
+      if (changeSats > 0) {
+        changeToken = getEncodedTokenV4({
+          mint: MINT_URL,
+          proofs: result.change,
+        });
+        console.log(`💰 Change proofs recovered: ${changeSats} sats`);
+      }
+    }
+
     return {
       success: true,
       preimage: result.quote.payment_preimage || '',
       feeSats: quote.fee_reserve,
+      changeToken,
     };
   } catch (error) {
     console.error('Melt error:', error);

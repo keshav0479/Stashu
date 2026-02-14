@@ -80,4 +80,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_settlement_seller ON settlement_log(seller_pubkey);
 `);
 
+// Cleanup stale Lightning quote bindings (unpaid invoices older than 1 hour)
+function cleanupStaleQuotes() {
+  const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
+  const result = db
+    .prepare(`DELETE FROM payments WHERE status = 'pending' AND id LIKE 'ln-%' AND created_at < ?`)
+    .run(oneHourAgo);
+  if (result.changes > 0) {
+    console.log(`🧹 Cleaned up ${result.changes} stale pending quotes`);
+  }
+}
+
+// Run cleanup on startup and every hour
+cleanupStaleQuotes();
+setInterval(cleanupStaleQuotes, 3600_000);
+
 export default db;

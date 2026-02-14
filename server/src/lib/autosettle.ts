@@ -153,6 +153,11 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     });
     markAll();
 
+    // Log change proofs if mint returned excess sats (informational only)
+    if (meltResult.changeToken) {
+      console.log(`💰 Auto-settle: mint returned change proofs (not persisted)`);
+    }
+
     // 7. Log success
     logSettlement(sellerPubkey, 'success', {
       amount: balance,

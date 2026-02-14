@@ -29,7 +29,3 @@ export function createBlossomAuthEvent(url: string, sha256hash: string): Verifie
     content: `Upload to ${url}`,
   });
 }
-
-export function encryptToSelf(plaintext: string): string {
-  return plaintext;
-}

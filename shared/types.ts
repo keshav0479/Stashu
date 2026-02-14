@@ -13,7 +13,6 @@ export interface Stash {
   id: string;
   blobUrl: string;
   secretKey: string;
-  keyBackup?: string;
   sellerPubkey: string;
   priceSats: number;
   title: string;
@@ -39,7 +38,7 @@ export interface StashPublicInfo {
 // Payment Types
 // ============================================
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'mint_failed';
 
 export interface Payment {
   id: string;
@@ -59,7 +58,6 @@ export interface Payment {
 export interface CreateStashRequest {
   blobUrl: string;
   secretKey: string;
-  keyBackup?: string;
   sellerPubkey: string;
   priceSats: number;
   title: string;

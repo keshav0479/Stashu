@@ -139,6 +139,11 @@ withdrawRoutes.post('/execute', async (c) => {
     });
     markAll();
 
+    // Log change proofs if mint returned excess sats (informational only)
+    if (meltResult.changeToken) {
+      console.log(`💰 Mint returned change proofs (these are not persisted)`);
+    }
+
     // Log successful manual withdrawal
     const feeSats = meltResult.feeSats || 0;
     const netSats = totalSats - feeSats;
