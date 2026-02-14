@@ -99,7 +99,35 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       });
     }
 
-    // Payment confirmed! Get stash details
+    // Payment confirmed! Atomically claim processing rights (prevents race condition)
+    const claimed = db
+      .prepare(`UPDATE payments SET status = 'processing' WHERE id = ? AND status = 'pending'`)
+      .run(paymentId);
+
+    if (claimed.changes === 0) {
+      // Another request is already processing or has completed — re-check status
+      const current = db.prepare('SELECT status FROM payments WHERE id = ?').get(paymentId) as any;
+      if (current?.status === 'paid') {
+        const stash = db
+          .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
+          .get(stashId) as any;
+        return c.json<APIResponse<PayStatusResponse>>({
+          success: true,
+          data: {
+            paid: true,
+            secretKey: stash.secret_key,
+            blobUrl: stash.blob_url,
+            fileName: stash.file_name,
+          },
+        });
+      }
+      // Still processing or failed — tell client to keep polling
+      return c.json<APIResponse<PayStatusResponse>>({
+        success: true,
+        data: { paid: false },
+      });
+    }
+
     const stash = db
       .prepare(
         'SELECT id, price_sats, secret_key, blob_url, file_name, seller_pubkey FROM stashes WHERE id = ?'
