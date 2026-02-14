@@ -81,18 +81,31 @@ db.exec(`
 `);
 
 // Cleanup stale Lightning quote bindings (unpaid invoices older than 1 hour)
+// Also recover stuck 'processing' rows (server crash recovery, 5 min timeout)
 function cleanupStaleQuotes() {
   const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
-  const result = db
+  const fiveMinAgo = Math.floor(Date.now() / 1000) - 300;
+
+  const deleted = db
     .prepare(`DELETE FROM payments WHERE status = 'pending' AND id LIKE 'ln-%' AND created_at < ?`)
     .run(oneHourAgo);
-  if (result.changes > 0) {
-    console.log(`🧹 Cleaned up ${result.changes} stale pending quotes`);
+
+  const recovered = db
+    .prepare(
+      `UPDATE payments SET status = 'pending' WHERE status = 'processing' AND id LIKE 'ln-%' AND created_at < ?`
+    )
+    .run(fiveMinAgo);
+
+  if (deleted.changes > 0) {
+    console.log(`🧹 Cleaned up ${deleted.changes} stale pending quotes`);
+  }
+  if (recovered.changes > 0) {
+    console.log(`🔄 Reset ${recovered.changes} stuck processing payments to pending`);
   }
 }
 
-// Run cleanup on startup and every hour
+// Run cleanup on startup and every 5 minutes
 cleanupStaleQuotes();
-setInterval(cleanupStaleQuotes, 3600_000);
+setInterval(cleanupStaleQuotes, 300_000);
 
 export default db;

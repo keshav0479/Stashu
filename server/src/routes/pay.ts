@@ -107,6 +107,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     if (claimed.changes === 0) {
       // Another request is already processing or has completed — re-check status
       const current = db.prepare('SELECT status FROM payments WHERE id = ?').get(paymentId) as any;
+
       if (current?.status === 'paid') {
         const stash = db
           .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
@@ -121,7 +122,18 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           },
         });
       }
-      // Still processing or failed — tell client to keep polling
+
+      if (current?.status === 'failed' || current?.status === 'mint_failed') {
+        return c.json<APIResponse<never>>(
+          {
+            success: false,
+            error: 'Payment processing failed. Please try again with a new invoice.',
+          },
+          500
+        );
+      }
+
+      // Still processing — tell client to keep polling
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,
         data: { paid: false },

@@ -105,8 +105,16 @@ export function UnlockPage() {
               fileName: status.fileName,
             });
           }
-        } catch {
-          // Silently retry on next poll
+        } catch (err) {
+          // Terminal server errors (e.g. mint_failed) — stop polling, show error
+          if (err instanceof Error && err.message.includes('failed')) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            if (timerRef.current) clearInterval(timerRef.current);
+            pollRef.current = null;
+            timerRef.current = null;
+            setLnError(err.message);
+          }
+          // Transient errors (network blip etc.) — silently retry on next poll
         }
       }, 2500);
     },

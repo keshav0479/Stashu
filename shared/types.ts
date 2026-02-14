@@ -38,7 +38,7 @@ export interface StashPublicInfo {
 // Payment Types
 // ============================================
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'mint_failed';
+export type PaymentStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'mint_failed';
 
 export interface Payment {
   id: string;
