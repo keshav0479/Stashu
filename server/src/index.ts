@@ -9,6 +9,7 @@ import { withdrawRoutes } from './routes/withdraw.js';
 import { payRoutes } from './routes/pay.js';
 import { settingsRoutes } from './routes/settings.js';
 import { requireAuth } from './middleware/auth.js';
+import { rateLimit } from './middleware/ratelimit.js';
 
 const app = new Hono();
 
@@ -29,10 +30,16 @@ app.use(
 // Health check
 app.get('/', (c) => c.json({ status: 'ok', name: 'Stashu API', version: '0.1.0' }));
 
-// Public API routes (no auth required)
-app.route('/api/stash', stashRoutes);
+// Public API routes (rate limited)
+app.use('/api/unlock/*', rateLimit(60_000, 30)); // 30 req/min
+app.use('/api/pay/*', rateLimit(60_000, 60)); // 60 req/min (client polls every 2.5s)
 app.route('/api/unlock', unlockRoutes);
 app.route('/api/pay', payRoutes);
+
+// Stash routes — GET is public (buyer preview), POST requires auth (prevents spoofing)
+app.use('/api/stash/*', rateLimit(60_000, 10)); // 10 req/min
+app.post('/api/stash', requireAuth); // Auth only on creation, not preview
+app.route('/api/stash', stashRoutes);
 
 // Protected API routes (require Nostr signature)
 app.use('/api/earnings/*', requireAuth);

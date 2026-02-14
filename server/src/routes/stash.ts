@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
+import type { AuthVariables } from '../middleware/auth.js';
 import type {
   CreateStashRequest,
   CreateStashResponse,
@@ -8,18 +9,18 @@ import type {
   APIResponse,
 } from '../../../shared/types.js';
 
-export const stashRoutes = new Hono();
+export const stashRoutes = new Hono<{ Variables: AuthVariables }>();
 
-// POST /api/stash - Create a new stash
+// POST /api/stash - Create a new stash (requires NIP-98 auth)
 stashRoutes.post('/', async (c) => {
   try {
+    const pubkey = c.get('authedPubkey');
     const body = await c.req.json<CreateStashRequest>();
 
     // Validate required fields
     if (
       !body.blobUrl ||
       !body.secretKey ||
-      !body.sellerPubkey ||
       !body.priceSats ||
       !body.title ||
       !body.fileSize ||
@@ -45,7 +46,7 @@ stashRoutes.post('/', async (c) => {
       id,
       body.blobUrl,
       body.secretKey,
-      body.sellerPubkey,
+      pubkey, // Use authed pubkey, not body.sellerPubkey (prevents spoofing)
       body.priceSats,
       body.title,
       body.description || null,

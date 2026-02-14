@@ -22,9 +22,13 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
  * Create a new stash on the backend
  */
 export async function createStash(request: CreateStashRequest): Promise<CreateStashResponse> {
-  const response = await fetch(`${API_BASE}/stash`, {
+  const url = `${API_BASE}/stash`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'POST'),
+    },
     body: JSON.stringify(request),
   });
 
