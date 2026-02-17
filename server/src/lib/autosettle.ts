@@ -1,6 +1,7 @@
 import db from '../db/index.js';
 import { resolveAddress } from './lnaddress.js';
 import { meltToLightning, getMeltQuote } from './cashu.js';
+import { decrypt } from './encryption.js';
 
 interface SettingsRow {
   pubkey: string;
@@ -130,7 +131,7 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     }
 
     // 5. Melt tokens to pay the invoice
-    const tokenStrings = tokens.map((t) => t.seller_token);
+    const tokenStrings = tokens.map((t) => decrypt(t.seller_token));
     const meltResult = await meltToLightning(tokenStrings, finalInvoice);
 
     if (!meltResult.success) {

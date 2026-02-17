@@ -6,6 +6,7 @@ import {
   mintAfterPayment,
   verifyAndSwapToken,
 } from '../lib/cashu.js';
+import { encrypt } from '../lib/encryption.js';
 import type { PayInvoiceResponse, PayStatusResponse, APIResponse } from '../../../shared/types.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 
@@ -131,7 +132,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       // Store successful payment
       db.prepare(
         `UPDATE payments SET status = 'paid', seller_token = ?, paid_at = unixepoch() WHERE id = ?`
-      ).run(swapResult.sellerToken, paymentId);
+      ).run(encrypt(swapResult.sellerToken!), paymentId);
 
       // Trigger auto-settlement check (fire-and-forget)
       tryAutoSettle(stash.seller_pubkey).catch(() => {});

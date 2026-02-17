@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createHash } from 'crypto';
 import db from '../db/index.js';
 import { verifyAndSwapToken } from '../lib/cashu.js';
+import { encrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
 
@@ -107,7 +108,7 @@ unlockRoutes.post('/:id', async (c) => {
       SET status = 'paid', seller_token = ?, paid_at = unixepoch()
       WHERE id = ?
     `
-    ).run(swapResult.sellerToken, paymentId);
+    ).run(encrypt(swapResult.sellerToken!), paymentId);
 
     // Trigger auto-settlement check (fire-and-forget)
     tryAutoSettle(stash.seller_pubkey).catch(() => {});

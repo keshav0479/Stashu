@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
+import { decrypt } from '../lib/encryption.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
   DashboardResponse,
@@ -59,7 +60,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
       price_sats: number;
     }>;
 
-    const tokens = tokenRows.map((r) => r.seller_token);
+    const tokens = tokenRows.map((r) => decrypt(r.seller_token));
     const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
 
     return c.json<APIResponse<DashboardResponse>>({
