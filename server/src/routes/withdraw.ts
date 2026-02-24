@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { getMeltQuote, meltToLightning } from '../lib/cashu.js';
+import { decrypt } from '../lib/encryption.js';
 import { resolveAddress } from '../lib/lnaddress.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
@@ -107,7 +108,7 @@ withdrawRoutes.post('/execute', async (c) => {
       );
     }
 
-    const tokens = tokenRows.map((r) => r.seller_token);
+    const tokens = tokenRows.map((r) => decrypt(r.seller_token));
     const paymentIds = tokenRows.map((r) => r.payment_id);
     const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
 
