@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createHash } from 'crypto';
 import db from '../db/index.js';
 import { verifyAndSwapToken } from '../lib/cashu.js';
+import { encrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
 
@@ -101,13 +102,21 @@ unlockRoutes.post('/:id', async (c) => {
     }
 
     // Mark payment as successful and store seller token
+    if (!swapResult.sellerToken) {
+      db.prepare(`UPDATE payments SET status = 'failed' WHERE id = ?`).run(paymentId);
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'Token swap succeeded but no seller token was returned' },
+        500
+      );
+    }
+
     db.prepare(
       `
       UPDATE payments 
       SET status = 'paid', seller_token = ?, paid_at = unixepoch()
       WHERE id = ?
     `
-    ).run(swapResult.sellerToken, paymentId);
+    ).run(encrypt(swapResult.sellerToken), paymentId);
 
     // Trigger auto-settlement check (fire-and-forget)
     tryAutoSettle(stash.seller_pubkey).catch(() => {});

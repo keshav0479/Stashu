@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
+import { decrypt } from '../lib/encryption.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type { EarningsResponse, APIResponse } from '../../../shared/types.js';
 
@@ -20,7 +21,7 @@ earningsRoutes.get('/:pubkey', async (c) => {
 
     const results = stmt.all(pubkey) as Array<{ seller_token: string; price_sats: number }>;
 
-    const tokens = results.map((r) => r.seller_token);
+    const tokens = results.map((r) => decrypt(r.seller_token));
     const totalSats = results.reduce((sum, r) => sum + r.price_sats, 0);
 
     return c.json<APIResponse<EarningsResponse>>({

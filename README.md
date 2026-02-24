@@ -36,9 +36,12 @@ git clone https://github.com/keshav0479/Stashu.git
 cd Stashu
 npm install
 
-# Configure environment (optional — defaults work for local dev)
+# Configure environment
 cp server/.env.example server/.env
-cp client/.env.example client/.env
+# ⚠️ server/.env requires TOKEN_ENCRYPTION_KEY — generate one:
+# node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+cp client/.env.example client/.env  # Optional — defaults work for local dev
 
 npm run dev
 ```
@@ -72,11 +75,12 @@ npm run dev
 
 ### What is NOT encrypted (known limitations)
 
-| Data              | Where                      | Risk                                                    | Why it's there                                                              |
-| ----------------- | -------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `secret_key`      | Server DB (stashes table)  | Server admin can decrypt files                          | Required for async pay-to-unlock — buyer and seller don't interact directly |
-| `seller_token`    | Server DB (payments table) | Server admin could spend tokens before seller withdraws | Server acts as escrow until seller withdraws                                |
-| Nostr private key | Browser localStorage       | XSS could steal nsec                                    | Same pattern as every Nostr web client; recoverable via nsec backup         |
+| Data              | Where                     | Risk                           | Why it's there                                                              |
+| ----------------- | ------------------------- | ------------------------------ | --------------------------------------------------------------------------- |
+| `secret_key`      | Server DB (stashes table) | Server admin can decrypt files | Required for async pay-to-unlock — buyer and seller don't interact directly |
+| Nostr private key | Browser localStorage      | XSS could steal nsec           | Same pattern as every Nostr web client; recoverable via nsec backup         |
+
+> **Note:** `seller_token` is encrypted at rest using XChaCha20-Poly1305 (requires `TOKEN_ENCRYPTION_KEY`).
 
 ### V2 Roadmap (removing trust)
 
@@ -85,7 +89,6 @@ These changes will eliminate the need to trust the server:
 1. **Client-to-buyer key exchange** — Deliver decryption keys via Nostr DMs instead of through the server. Server never sees `secret_key`.
 2. **Non-custodial token swaps** — Direct buyer-to-seller token transfer or DLC-based escrow. Server never holds `seller_token`.
 3. **Multi-mint support** — Eliminate single-mint dependency.
-4. **Encrypted token storage** — If tokens must touch the server, encrypt them at rest with seller's pubkey.
 
 ## Roadmap
 
@@ -116,7 +119,6 @@ These changes will eliminate the need to trust the server:
 
 - [ ] Client-to-buyer key exchange (zero-knowledge file access)
 - [ ] Non-custodial token swaps (remove server custody)
-- [ ] Encrypted token storage at rest
 - [ ] Multiple Cashu mints
 - [ ] WebLN integration
 - [ ] Nostr Wallet Connect

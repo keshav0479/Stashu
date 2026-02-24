@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
-    "start": "node dist/server/src/index.js"
+    "start": "node --env-file=.env dist/server/src/index.js",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@cashu/cashu-ts": "^2.0.0",
     "@hono/node-server": "^1.8.0",
+    "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "better-sqlite3": "^11.0.0",
     "hono": "^4.0.0",

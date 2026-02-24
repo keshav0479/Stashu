@@ -109,4 +109,63 @@ function cleanupStaleQuotes() {
 cleanupStaleQuotes();
 setInterval(cleanupStaleQuotes, 300_000);
 
+// Require TOKEN_ENCRYPTION_KEY — refuse to start without a valid key.
+// Cashu tokens are bearer instruments; running without encryption is a security risk.
+if (
+  !process.env.TOKEN_ENCRYPTION_KEY ||
+  !/^[0-9a-fA-F]{64}$/.test(process.env.TOKEN_ENCRYPTION_KEY)
+) {
+  console.error(
+    '❌ TOKEN_ENCRYPTION_KEY is missing or invalid (must be exactly 64 hex chars).\n' +
+      "   Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+  );
+  process.exit(1);
+}
+
+// One-time migration: encrypt any plaintext seller tokens still in the DB.
+// Plaintext Cashu tokens always start with "cashu". We re-encrypt them so
+// they are no longer readable to anyone with raw DB access.
+{
+  const { encrypt, decrypt } = await import('../lib/encryption.js');
+
+  // Key-rotation safety: verify the current key can decrypt ALL existing ciphertext.
+  // If ops rotated the key without re-encrypting rows, dashboard/earnings/withdraw
+  // would crash at runtime. Checking every row catches mixed-key DBs too.
+  const encryptedRows = db
+    .prepare(
+      `SELECT id, seller_token FROM payments
+       WHERE seller_token IS NOT NULL AND seller_token NOT LIKE 'cashu%'`
+    )
+    .all() as Array<{ id: string; seller_token: string }>;
+
+  for (const row of encryptedRows) {
+    try {
+      decrypt(row.seller_token);
+    } catch {
+      console.error(
+        `❌ TOKEN_ENCRYPTION_KEY cannot decrypt token in payment ${row.id}.\n` +
+          '   Did you rotate the key? Restore the previous key or re-encrypt the rows.'
+      );
+      process.exit(1);
+    }
+  }
+
+  const plaintextRows = db
+    .prepare(
+      `SELECT id, seller_token FROM payments WHERE seller_token IS NOT NULL AND seller_token LIKE 'cashu%'`
+    )
+    .all() as Array<{ id: string; seller_token: string }>;
+
+  if (plaintextRows.length > 0) {
+    const update = db.prepare(`UPDATE payments SET seller_token = ? WHERE id = ?`);
+    const migrateAll = db.transaction(() => {
+      for (const row of plaintextRows) {
+        update.run(encrypt(row.seller_token), row.id);
+      }
+    });
+    migrateAll();
+    console.log(`🔐 Encrypted ${plaintextRows.length} plaintext seller token(s) in DB.`);
+  }
+}
+
 export default db;
