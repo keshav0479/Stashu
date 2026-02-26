@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { hasIdentity, getOrCreateIdentity, getPublicKeyHex, clearIdentity } from '../lib/identity';
 import { getSettings, saveSettings } from '../lib/api';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 import { copyToClipboard } from '../lib/clipboard';
 
 export function SettingsPage() {

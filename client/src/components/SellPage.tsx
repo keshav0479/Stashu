@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { PartyPopper, Squirrel } from 'lucide-react';
 import { FileUploader } from './FileUploader';
 import { RecoveryTokenModal } from './RecoveryTokenModal';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 import { useStash } from '../lib/useStash';
 import { hasAcknowledgedRecovery, getOrCreateIdentity } from '../lib/identity';
 import { copyToClipboard } from '../lib/clipboard';

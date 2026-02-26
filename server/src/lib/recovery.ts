@@ -1,6 +1,6 @@
 import db from '../db/index.js';
 import { checkMeltQuoteStatus, mintAfterPayment, verifyAndSwapToken } from './cashu.js';
-import { encrypt } from './encryption.js';
+import { encrypt, decrypt } from './encryption.js';
 import { tryAutoSettle } from './autosettle.js';
 
 interface PendingMeltRow {

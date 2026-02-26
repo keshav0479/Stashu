@@ -1,5 +1,9 @@
 import { Hono } from 'hono';
-import db, { insertChangeProof } from '../db/index.js';
+import db, {
+  insertChangeProof,
+  getUnconsumedChangeProofs,
+  markChangeProofsConsumed,
+} from '../db/index.js';
 import { getMeltQuote, meltWithRecovery, getTokenValue } from '../lib/cashu.js';
 import { decrypt, encrypt } from '../lib/encryption.js';
 import { resolveAddress } from '../lib/lnaddress.js';
@@ -36,14 +40,18 @@ withdrawRoutes.post('/quote', async (c) => {
       )
       .all(pubkey) as Array<{ seller_token: string; price_sats: number }>;
 
-    if (tokens.length === 0) {
+    // Include unconsumed change proofs in balance
+    const changeProofs = getUnconsumedChangeProofs(pubkey);
+    const changeSatsTotal = changeProofs.reduce((sum, cp) => sum + cp.amount_sats, 0);
+
+    if (tokens.length === 0 && changeProofs.length === 0) {
       return c.json<APIResponse<never>>(
         { success: false, error: 'No unclaimed earnings to withdraw' },
         400
       );
     }
 
-    const totalSats = tokens.reduce((sum, t) => sum + t.price_sats, 0);
+    const totalSats = tokens.reduce((sum, t) => sum + t.price_sats, 0) + changeSatsTotal;
 
     // Get fee estimate from mint
     const quoteResult = await getMeltQuote(body.invoice);
@@ -101,7 +109,10 @@ withdrawRoutes.post('/execute', async (c) => {
       price_sats: number;
     }>;
 
-    if (tokenRows.length === 0) {
+    // Include unconsumed change proofs
+    const changeProofs = getUnconsumedChangeProofs(pubkey);
+
+    if (tokenRows.length === 0 && changeProofs.length === 0) {
       return c.json<APIResponse<never>>(
         { success: false, error: 'No unclaimed earnings to withdraw' },
         400
@@ -109,11 +120,16 @@ withdrawRoutes.post('/execute', async (c) => {
     }
 
     const tokens = tokenRows.map((r) => decrypt(r.seller_token));
+    const changeTokens = changeProofs.map((cp) => decrypt(cp.token));
+    const allTokens = [...tokens, ...changeTokens];
     const paymentIds = tokenRows.map((r) => r.payment_id);
-    const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
+    const changeProofIds = changeProofs.map((cp) => cp.id);
+    const totalSats =
+      tokenRows.reduce((sum, r) => sum + r.price_sats, 0) +
+      changeProofs.reduce((sum, cp) => sum + cp.amount_sats, 0);
 
-    // Melt tokens to Lightning
-    const meltResult = await meltWithRecovery(tokens, body.invoice, pubkey);
+    // Melt all tokens (payments + change proofs) to Lightning
+    const meltResult = await meltWithRecovery(allTokens, body.invoice, pubkey);
 
     if (!meltResult.success) {
       // Log failed manual withdrawal
@@ -131,7 +147,7 @@ withdrawRoutes.post('/execute', async (c) => {
       );
     }
 
-    // Mark all tokens as claimed
+    // Mark all tokens as claimed and change proofs as consumed
     const markClaimed = db.prepare(`UPDATE payments SET claimed = 1 WHERE id = ?`);
     const markAll = db.transaction(() => {
       for (const id of paymentIds) {
@@ -139,6 +155,9 @@ withdrawRoutes.post('/execute', async (c) => {
       }
     });
     markAll();
+    if (changeProofIds.length > 0) {
+      markChangeProofsConsumed(changeProofIds);
+    }
 
     // Persist change proofs if the mint returned excess sats
     if (meltResult.changeToken) {

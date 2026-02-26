@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Key, Copy, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { getRecoveryToken, acknowledgeRecovery } from '../lib/identity';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 import { copyToClipboard } from '../lib/clipboard';
 
 interface RecoveryTokenModalProps {

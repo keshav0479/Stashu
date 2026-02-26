@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Zap, X, AlertTriangle, Check, Loader2, Lightbulb } from 'lucide-react';
 import { getWithdrawQuote, executeWithdraw, resolveLnAddress } from '../lib/api';
 import { getPublicKeyHex } from '../lib/identity';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 
 interface WithdrawModalProps {
   totalSats: number;

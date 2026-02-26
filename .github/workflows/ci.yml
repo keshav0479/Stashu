@@ -20,4 +20,5 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+      - run: npm run lint --workspace=client
       - run: npx prettier --check .

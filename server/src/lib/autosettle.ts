@@ -1,4 +1,8 @@
-import db, { insertChangeProof } from '../db/index.js';
+import db, {
+  insertChangeProof,
+  getUnconsumedChangeProofs,
+  markChangeProofsConsumed,
+} from '../db/index.js';
 import { resolveAddress } from './lnaddress.js';
 import { meltWithRecovery, getMeltQuote, getTokenValue } from './cashu.js';
 import { decrypt, encrypt } from './encryption.js';
@@ -55,13 +59,18 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
 
     const balance = result?.total || 0;
 
-    if (balance < settings.auto_withdraw_threshold) {
+    // Include unconsumed change proofs in balance calculation
+    const changeProofs = getUnconsumedChangeProofs(sellerPubkey);
+    const changeSats = changeProofs.reduce((sum, cp) => sum + cp.amount_sats, 0);
+    const totalBalance = balance + changeSats;
+
+    if (totalBalance < settings.auto_withdraw_threshold) {
       return; // Below threshold — don't log, this is normal
     }
 
     console.log(
       `⚡ Auto-settlement triggered for ${sellerPubkey.substring(0, 8)}... ` +
-        `(balance: ${balance} sats, threshold: ${settings.auto_withdraw_threshold} sats)`
+        `(balance: ${totalBalance} sats, threshold: ${settings.auto_withdraw_threshold} sats)`
     );
 
     // 3. Get all unclaimed tokens
@@ -74,16 +83,16 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
       )
       .all(sellerPubkey) as Array<{ id: string; seller_token: string }>;
 
-    if (tokens.length === 0) return;
+    if (tokens.length === 0 && changeProofs.length === 0) return;
 
     // 4. Resolve LN address: first get fee, then resolve for net amount
     let tempInvoice: string;
     try {
-      tempInvoice = await resolveAddress(settings.ln_address, balance);
+      tempInvoice = await resolveAddress(settings.ln_address, totalBalance);
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Failed to resolve LN address';
       logSettlement(sellerPubkey, 'failed', {
-        amount: balance,
+        amount: totalBalance,
         lnAddress: settings.ln_address,
         error,
       });
@@ -95,20 +104,20 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
 
     if (!tempQuote.success || !tempQuote.feeSats) {
       logSettlement(sellerPubkey, 'failed', {
-        amount: balance,
+        amount: totalBalance,
         lnAddress: settings.ln_address,
         error: 'Failed to get fee estimate from mint',
       });
       return;
     }
 
-    const netAmount = balance - tempQuote.feeSats;
+    const netAmount = totalBalance - tempQuote.feeSats;
     if (netAmount <= 0) {
       logSettlement(sellerPubkey, 'skipped', {
-        amount: balance,
+        amount: totalBalance,
         fee: tempQuote.feeSats,
         lnAddress: settings.ln_address,
-        error: `Balance ${balance} too low to cover ${tempQuote.feeSats} fee`,
+        error: `Balance ${totalBalance} too low to cover ${tempQuote.feeSats} fee`,
       });
       return;
     }
@@ -121,7 +130,7 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
       const error =
         err instanceof Error ? err.message : 'Failed to resolve LN address for net amount';
       logSettlement(sellerPubkey, 'failed', {
-        amount: balance,
+        amount: totalBalance,
         fee: tempQuote.feeSats,
         net: netAmount,
         lnAddress: settings.ln_address,
@@ -132,11 +141,13 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
 
     // 5. Melt tokens to pay the invoice
     const tokenStrings = tokens.map((t) => decrypt(t.seller_token));
-    const meltResult = await meltWithRecovery(tokenStrings, finalInvoice, sellerPubkey);
+    const changeTokenStrings = changeProofs.map((cp) => decrypt(cp.token));
+    const allTokenStrings = [...tokenStrings, ...changeTokenStrings];
+    const meltResult = await meltWithRecovery(allTokenStrings, finalInvoice, sellerPubkey);
 
     if (!meltResult.success) {
       logSettlement(sellerPubkey, 'failed', {
-        amount: balance,
+        amount: totalBalance,
         fee: tempQuote.feeSats,
         net: netAmount,
         lnAddress: settings.ln_address,
@@ -154,6 +165,11 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     });
     markAll();
 
+    // Also mark change proofs as consumed
+    if (changeProofs.length > 0) {
+      markChangeProofsConsumed(changeProofs.map((cp) => cp.id));
+    }
+
     // Persist change proofs if the mint returned excess sats
     if (meltResult.changeToken) {
       const changeSats = getTokenValue(meltResult.changeToken);
@@ -167,7 +183,7 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
 
     // 7. Log success
     logSettlement(sellerPubkey, 'success', {
-      amount: balance,
+      amount: totalBalance,
       fee: tempQuote.feeSats,
       net: netAmount,
       lnAddress: settings.ln_address,

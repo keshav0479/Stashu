@@ -102,18 +102,18 @@ These changes will eliminate the need to trust the server:
 - **Lightning Withdrawal** — One-click withdrawal, BOLT11 + LN address (LUD-16), token aggregation, fee estimation, settlement history
 - **Lightning Pay** — Invoice QR, mint quote polling, server-side minting, auto-download, expiry countdown, invoice persistence
 - **Auto-Settlement** — Configurable threshold, automatic LN address payout, settlement logging
-- **Security Hardening** — NIP-98 auth on all seller + stash endpoints, rate limiting, anti-replay binding, atomic processing lock, stale quote cleanup, stuck-processing recovery
+- **Security Hardening** — NIP-98 auth on all seller + stash endpoints, rate limiting, anti-replay binding, atomic processing lock, stale quote cleanup, stuck-processing recovery, token encryption at rest
+- **Payment Recovery** — Change proof persistence + reuse in withdrawals, pending melt tracking, mint failure auto-retry on startup
+- **Infrastructure** — Cashu-ts v3.5.0, Docker + Docker Compose, GitHub Actions CI (build + lint + format), OG meta tags, custom 404 page
 - **Environment Config** — PORT, MINT_URL, DB_PATH, CORS_ORIGINS, VITE_API_URL, VITE_BLOSSOM_URL
 
 ### Next Up
 
 - [ ] "How it Works" section on homepage
 - [ ] Fee transparency (warn when fee > 10% of withdrawal)
-- [ ] OG meta tags for link previews
-- [ ] Custom 404 error page
-- [ ] Dockerfile + Docker Compose
+- [ ] Stash lifecycle (edit price/description, unpublish/delete)
+- [ ] NIP-99 marketplace event publishing
 - [ ] HTTPS / reverse proxy guide (nginx/Caddy)
-- [ ] CI workflow (build + lint)
 
 ### Future
 
@@ -123,7 +123,6 @@ These changes will eliminate the need to trust the server:
 - [ ] WebLN integration
 - [ ] Nostr Wallet Connect
 - [ ] Split payments (revenue share)
-- [ ] Nostr event publishing (discoverability)
 - [ ] Browser-local wallet (move tokens client-side)
 - [ ] NIP-98 payload hash binding
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Key, Info } from 'lucide-react';
 import { importFromRecoveryToken } from '../lib/identity';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 
 export function RestorePage() {
   const [nsec, setNsec] = useState('');

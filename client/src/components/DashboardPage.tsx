@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { getDashboard, getSettlements } from '../lib/api';
 import { getPublicKeyHex, hasIdentity } from '../lib/identity';
-import { useToast } from './Toast';
+import { useToast } from './useToast';
 import { copyToClipboard } from '../lib/clipboard';
 import { WithdrawModal } from './WithdrawModal';
 import { SettlementHistoryModal } from './SettlementHistoryModal';
