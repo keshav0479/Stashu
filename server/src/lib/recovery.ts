@@ -1,5 +1,7 @@
 import db from '../db/index.js';
-import { checkMeltQuoteStatus } from './cashu.js';
+import { checkMeltQuoteStatus, mintAfterPayment, verifyAndSwapToken } from './cashu.js';
+import { encrypt } from './encryption.js';
+import { tryAutoSettle } from './autosettle.js';
 
 interface PendingMeltRow {
   id: number;
@@ -50,6 +52,67 @@ export async function recoverPendingMelts(): Promise<void> {
     } catch (error) {
       console.error(`⚠️ Failed to check melt ${row.quote_id.substring(0, 8)}...:`, error);
       // Don't mark as failed — will retry next startup
+    }
+  }
+}
+
+interface MintFailedRow {
+  id: string;
+  stash_id: string;
+  token_hash: string; // stores the quoteId for mint_failed payments
+}
+
+/**
+ * On startup, retry minting for payments stuck in 'mint_failed' state.
+ * These are payments where the buyer's Lightning invoice was paid but the
+ * server crashed before minting + swapping the Cashu tokens.
+ */
+export async function recoverMintFailures(): Promise<void> {
+  const failed = db
+    .prepare(`SELECT id, stash_id, token_hash FROM payments WHERE status = 'mint_failed'`)
+    .all() as MintFailedRow[];
+
+  if (failed.length === 0) return;
+
+  console.log(`🔄 Found ${failed.length} mint_failed payment(s) — retrying...`);
+
+  for (const row of failed) {
+    try {
+      const stash = db
+        .prepare('SELECT price_sats, seller_pubkey FROM stashes WHERE id = ?')
+        .get(row.stash_id) as { price_sats: number; seller_pubkey: string } | undefined;
+
+      if (!stash) {
+        console.error(`⚠️ Stash ${row.stash_id} not found for payment ${row.id} — skipping`);
+        continue;
+      }
+
+      const quoteId = row.token_hash;
+      console.log(`  Retrying mint for payment ${row.id} (quote: ${quoteId.substring(0, 8)}...)`);
+
+      // Retry minting tokens from the paid invoice
+      const mintedToken = await mintAfterPayment(stash.price_sats, quoteId);
+
+      // Swap minted tokens to create seller's token
+      const swapResult = await verifyAndSwapToken(mintedToken, stash.price_sats);
+
+      if (!swapResult.success || !swapResult.sellerToken) {
+        console.error(`  ❌ Swap failed for payment ${row.id}: ${swapResult.error}`);
+        continue; // Leave as mint_failed — will retry next startup
+      }
+
+      // Success! Update payment to 'paid' with encrypted seller token
+      db.prepare(
+        `UPDATE payments SET status = 'paid', seller_token = ?, paid_at = unixepoch() WHERE id = ?`
+      ).run(encrypt(swapResult.sellerToken), row.id);
+
+      console.log(`  ✅ Recovered payment ${row.id} — ${stash.price_sats} sats`);
+
+      // Trigger auto-settlement check
+      tryAutoSettle(stash.seller_pubkey).catch(() => {});
+    } catch (error) {
+      console.error(`  ⚠️ Recovery failed for payment ${row.id}:`, error);
+      // Leave as mint_failed — will retry next startup
     }
   }
 }

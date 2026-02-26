@@ -11,7 +11,7 @@ import { settingsRoutes } from './routes/settings.js';
 import { requireAuth } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';
 
-import { recoverPendingMelts } from './lib/recovery.js';
+import { recoverPendingMelts, recoverMintFailures } from './lib/recovery.js';
 
 const app = new Hono();
 
@@ -54,8 +54,10 @@ app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/withdraw', withdrawRoutes);
 app.route('/api/settings', settingsRoutes);
 
-// Startup recovery — check for in-flight melts from a previous crash
-recoverPendingMelts().catch((err) => console.error('Recovery error:', err));
+// Startup recovery — resolve in-flight melts and retry failed mints
+recoverPendingMelts()
+  .then(() => recoverMintFailures())
+  .catch((err) => console.error('Recovery error:', err));
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`🐿️ Stashu server running on http://localhost:${port}`);

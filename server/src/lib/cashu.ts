@@ -1,5 +1,6 @@
 import { Mint, Wallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
 import type { Proof } from '@cashu/cashu-ts';
+import db from '../db/index.js';
 
 // Cashu Mint URL — configurable via env for production
 const MINT_URL = process.env.MINT_URL || 'https://mint.minibits.cash/Bitcoin';
@@ -169,7 +170,6 @@ export async function meltWithRecovery(
     }
 
     // Persist the melt intent BEFORE executing — crash recovery can check this
-    const { default: db } = await import('../db/index.js');
     db.prepare(
       `INSERT INTO pending_melts (seller_pubkey, quote_id, proofs_json, invoice, amount_sats, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
