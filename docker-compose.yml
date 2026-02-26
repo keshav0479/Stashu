@@ -1,0 +1,16 @@
+services:
+  stashu:
+    build: .
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/stashu.db
+    volumes:
+      - stashu-data:/data
+    restart: unless-stopped
+
+volumes:
+  stashu-data:

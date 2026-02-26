@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { stashRoutes } from './routes/stash.js';
 import { unlockRoutes } from './routes/unlock.js';
 import { earningsRoutes } from './routes/earnings.js';
@@ -30,7 +31,7 @@ app.use(
 );
 
 // Health check
-app.get('/', (c) => c.json({ status: 'ok', name: 'Stashu API', version: '0.1.0' }));
+app.get('/api/health', (c) => c.json({ status: 'ok', name: 'Stashu API', version: '0.1.0' }));
 
 // Public API routes (rate limited)
 app.use('/api/unlock/*', rateLimit(60_000, 30)); // 30 req/min
@@ -53,6 +54,14 @@ app.route('/api/earnings', earningsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/withdraw', withdrawRoutes);
 app.route('/api/settings', settingsRoutes);
+
+// Production: serve built client as static files with SPA fallback
+if (process.env.NODE_ENV === 'production') {
+  app.use('/*', serveStatic({ root: './client/dist' }));
+
+  // SPA fallback — serve index.html for any non-API route that didn't match a static file
+  app.get('*', serveStatic({ root: './client/dist', path: 'index.html' }));
+}
 
 // Startup recovery — resolve in-flight melts and retry failed mints
 recoverPendingMelts()

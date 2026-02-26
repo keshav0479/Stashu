@@ -1,0 +1,14 @@
+node_modules
+.git
+*.db
+.env
+.env.*
+!.env.example
+server/dist
+client/dist
+client/node_modules
+server/node_modules
+*.log
+.DS_Store
+.vscode
+.idea

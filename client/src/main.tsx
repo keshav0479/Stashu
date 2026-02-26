@@ -10,6 +10,7 @@ import {
   SettingsPage,
   ToastProvider,
 } from './components';
+import NotFoundPage from './components/NotFoundPage.tsx';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -23,6 +24,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/restore" element={<RestorePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
     </ToastProvider>
