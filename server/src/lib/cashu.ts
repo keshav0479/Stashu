@@ -1,14 +1,15 @@
-import { CashuMint, CashuWallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
+import { Mint, Wallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
+import type { Proof } from '@cashu/cashu-ts';
 
 // Cashu Mint URL — configurable via env for production
 const MINT_URL = process.env.MINT_URL || 'https://mint.minibits.cash/Bitcoin';
 
-let wallet: CashuWallet | null = null;
+let wallet: Wallet | null = null;
 
-async function getWallet(): Promise<CashuWallet> {
+async function getWallet(): Promise<Wallet> {
   if (!wallet) {
-    const mint = new CashuMint(MINT_URL);
-    wallet = new CashuWallet(mint);
+    const mint = new Mint(MINT_URL);
+    wallet = new Wallet(mint);
     // Load keys from mint
     await wallet.loadMint();
   }
@@ -38,18 +39,10 @@ export interface MeltResult {
 }
 
 /**
- * Extract proofs from a decoded token (handles both v0 and v1 formats)
+ * Extract proofs from a decoded token
  */
-function getProofsFromToken(decoded: any): Array<{ amount: number }> {
-  // v1 format: { mint, proofs, unit, memo }
-  if (decoded.proofs && Array.isArray(decoded.proofs)) {
-    return decoded.proofs;
-  }
-  // v0 format: { token: [{ mint, proofs }] }
-  if (decoded.token && Array.isArray(decoded.token)) {
-    return decoded.token.flatMap((t: any) => t.proofs || []);
-  }
-  return [];
+function getProofsFromToken(decoded: { proofs: Proof[]; mint: string }): Proof[] {
+  return decoded.proofs || [];
 }
 
 /**
@@ -149,14 +142,14 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
 
     // Extract proofs directly from tokens (they are already valid proofs on this mint)
     // Do NOT call w.receive() — that would try to re-swap already-owned proofs
-    const allProofs: any[] = [];
+    const allProofs: Proof[] = [];
     for (const token of tokens) {
       const decoded = getDecodedToken(token);
       const proofs = getProofsFromToken(decoded);
       allProofs.push(...proofs);
     }
 
-    const totalValue = allProofs.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const totalValue = allProofs.reduce((sum: number, p) => sum + p.amount, 0);
 
     // Get melt quote
     const quote = await w.createMeltQuote(invoice);
@@ -182,7 +175,7 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
     // Persist change proofs if the mint returned excess sats
     let changeToken: string | undefined;
     if (result.change && result.change.length > 0) {
-      const changeSats = result.change.reduce((sum: number, p: any) => sum + p.amount, 0);
+      const changeSats = result.change.reduce((sum: number, p) => sum + p.amount, 0);
       if (changeSats > 0) {
         changeToken = getEncodedTokenV4({
           mint: MINT_URL,
