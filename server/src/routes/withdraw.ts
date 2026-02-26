@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import db from '../db/index.js';
-import { getMeltQuote, meltToLightning } from '../lib/cashu.js';
-import { decrypt } from '../lib/encryption.js';
+import db, { insertChangeProof } from '../db/index.js';
+import { getMeltQuote, meltToLightning, getTokenValue } from '../lib/cashu.js';
+import { decrypt, encrypt } from '../lib/encryption.js';
 import { resolveAddress } from '../lib/lnaddress.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
@@ -140,9 +140,15 @@ withdrawRoutes.post('/execute', async (c) => {
     });
     markAll();
 
-    // Log change proofs if mint returned excess sats (informational only)
+    // Persist change proofs if the mint returned excess sats
     if (meltResult.changeToken) {
-      console.log(`💰 Mint returned change proofs (these are not persisted)`);
+      const changeSats = getTokenValue(meltResult.changeToken);
+      if (changeSats > 0) {
+        insertChangeProof(pubkey, encrypt(meltResult.changeToken), changeSats, 'manual_withdraw');
+        console.log(
+          `💰 Persisted ${changeSats} sats of change proofs for ${pubkey.substring(0, 8)}...`
+        );
+      }
     }
 
     // Log successful manual withdrawal

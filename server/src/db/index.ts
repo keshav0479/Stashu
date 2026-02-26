@@ -81,6 +81,62 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_settlement_seller ON settlement_log(seller_pubkey);
 `);
 
+// Change proofs — excess sats returned by the mint after melts
+db.exec(`
+  CREATE TABLE IF NOT EXISTS change_proofs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_pubkey TEXT NOT NULL,
+    token TEXT NOT NULL,
+    amount_sats INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    consumed INTEGER DEFAULT 0,
+    created_at INTEGER DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_change_proofs_seller ON change_proofs(seller_pubkey);
+`);
+
+/**
+ * Insert a change proof returned by the mint after a melt.
+ * The token should already be encrypted before calling this.
+ */
+export function insertChangeProof(
+  sellerPubkey: string,
+  encryptedToken: string,
+  amountSats: number,
+  source: 'manual_withdraw' | 'auto_settle'
+) {
+  db.prepare(
+    `INSERT INTO change_proofs (seller_pubkey, token, amount_sats, source)
+     VALUES (?, ?, ?, ?)`
+  ).run(sellerPubkey, encryptedToken, amountSats, source);
+}
+
+/**
+ * Get all unconsumed change proofs for a seller.
+ * Returns encrypted tokens — caller must decrypt.
+ */
+export function getUnconsumedChangeProofs(sellerPubkey: string) {
+  return db
+    .prepare(
+      `SELECT id, token, amount_sats FROM change_proofs
+       WHERE seller_pubkey = ? AND consumed = 0`
+    )
+    .all(sellerPubkey) as Array<{ id: number; token: string; amount_sats: number }>;
+}
+
+/**
+ * Mark change proofs as consumed (after they are re-melted or aggregated).
+ */
+export function markChangeProofsConsumed(ids: number[]) {
+  const mark = db.prepare(`UPDATE change_proofs SET consumed = 1 WHERE id = ?`);
+  const markAll = db.transaction(() => {
+    for (const id of ids) {
+      mark.run(id);
+    }
+  });
+  markAll();
+}
+
 // Cleanup stale Lightning quote bindings (unpaid invoices older than 1 hour)
 // Also recover stuck 'processing' rows (server crash recovery, 5 min timeout)
 function cleanupStaleQuotes() {

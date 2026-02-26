@@ -1,7 +1,7 @@
-import db from '../db/index.js';
+import db, { insertChangeProof } from '../db/index.js';
 import { resolveAddress } from './lnaddress.js';
-import { meltToLightning, getMeltQuote } from './cashu.js';
-import { decrypt } from './encryption.js';
+import { meltToLightning, getMeltQuote, getTokenValue } from './cashu.js';
+import { decrypt, encrypt } from './encryption.js';
 
 interface SettingsRow {
   pubkey: string;
@@ -154,9 +154,15 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     });
     markAll();
 
-    // Log change proofs if mint returned excess sats (informational only)
+    // Persist change proofs if the mint returned excess sats
     if (meltResult.changeToken) {
-      console.log(`💰 Auto-settle: mint returned change proofs (not persisted)`);
+      const changeSats = getTokenValue(meltResult.changeToken);
+      if (changeSats > 0) {
+        insertChangeProof(sellerPubkey, encrypt(meltResult.changeToken), changeSats, 'auto_settle');
+        console.log(
+          `💰 Auto-settle: persisted ${changeSats} sats of change proofs for ${sellerPubkey.substring(0, 8)}...`
+        );
+      }
     }
 
     // 7. Log success
