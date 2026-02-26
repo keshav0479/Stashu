@@ -11,6 +11,8 @@ import { settingsRoutes } from './routes/settings.js';
 import { requireAuth } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';
 
+import { recoverPendingMelts } from './lib/recovery.js';
+
 const app = new Hono();
 
 const corsOrigins = process.env.CORS_ORIGINS
@@ -51,6 +53,9 @@ app.route('/api/earnings', earningsRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/withdraw', withdrawRoutes);
 app.route('/api/settings', settingsRoutes);
+
+// Startup recovery — check for in-flight melts from a previous crash
+recoverPendingMelts().catch((err) => console.error('Recovery error:', err));
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`🐿️ Stashu server running on http://localhost:${port}`);

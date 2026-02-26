@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import db, { insertChangeProof } from '../db/index.js';
-import { getMeltQuote, meltToLightning, getTokenValue } from '../lib/cashu.js';
+import { getMeltQuote, meltWithRecovery, getTokenValue } from '../lib/cashu.js';
 import { decrypt, encrypt } from '../lib/encryption.js';
 import { resolveAddress } from '../lib/lnaddress.js';
 import type { AuthVariables } from '../middleware/auth.js';
@@ -113,7 +113,7 @@ withdrawRoutes.post('/execute', async (c) => {
     const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
 
     // Melt tokens to Lightning
-    const meltResult = await meltToLightning(tokens, body.invoice);
+    const meltResult = await meltWithRecovery(tokens, body.invoice, pubkey);
 
     if (!meltResult.success) {
       // Log failed manual withdrawal

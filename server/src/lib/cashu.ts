@@ -131,17 +131,23 @@ export async function getMeltQuote(invoice: string): Promise<MeltQuoteResult> {
 }
 
 /**
- * Melt aggregated Cashu tokens to pay a Lightning invoice
+ * Melt aggregated Cashu tokens to pay a Lightning invoice.
+ * Tracks the melt in `pending_melts` table so it can be recovered on crash.
+ *
  * @param tokens Array of encoded Cashu token strings
  * @param invoice BOLT11 Lightning invoice to pay
+ * @param sellerPubkey Seller's pubkey (for pending_melts tracking)
  * @returns MeltResult including any change token (excess sats returned by mint)
  */
-export async function meltToLightning(tokens: string[], invoice: string): Promise<MeltResult> {
+export async function meltWithRecovery(
+  tokens: string[],
+  invoice: string,
+  sellerPubkey: string
+): Promise<MeltResult> {
   try {
     const w = await getWallet();
 
     // Extract proofs directly from tokens (they are already valid proofs on this mint)
-    // Do NOT call w.receive() — that would try to re-swap already-owned proofs
     const allProofs: Proof[] = [];
     for (const token of tokens) {
       const decoded = getDecodedToken(token);
@@ -162,35 +168,43 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
       };
     }
 
+    // Persist the melt intent BEFORE executing — crash recovery can check this
+    const { default: db } = await import('../db/index.js');
+    db.prepare(
+      `INSERT INTO pending_melts (seller_pubkey, quote_id, proofs_json, invoice, amount_sats, status)
+       VALUES (?, ?, ?, ?, ?, 'pending')`
+    ).run(sellerPubkey, quote.quote, JSON.stringify(allProofs), invoice, totalValue);
+
     // Execute melt (pay the invoice)
     const result = await w.meltProofs(quote, allProofs);
 
-    if (result.quote.state !== 'PAID') {
-      return {
-        success: false,
-        error: 'Lightning payment failed',
-      };
-    }
+    if (result.quote.state === 'PAID') {
+      // Mark pending melt as completed
+      db.prepare(`UPDATE pending_melts SET status = 'completed' WHERE quote_id = ?`).run(
+        quote.quote
+      );
 
-    // Persist change proofs if the mint returned excess sats
-    let changeToken: string | undefined;
-    if (result.change && result.change.length > 0) {
-      const changeSats = result.change.reduce((sum: number, p) => sum + p.amount, 0);
-      if (changeSats > 0) {
-        changeToken = getEncodedTokenV4({
-          mint: MINT_URL,
-          proofs: result.change,
-        });
-        console.log(`💰 Change proofs recovered: ${changeSats} sats`);
+      // Encode change proofs if the mint returned excess sats
+      let changeToken: string | undefined;
+      if (result.change && result.change.length > 0) {
+        const changeSats = result.change.reduce((sum: number, p) => sum + p.amount, 0);
+        if (changeSats > 0) {
+          changeToken = getEncodedTokenV4({ mint: MINT_URL, proofs: result.change });
+          console.log(`💰 Change proofs recovered: ${changeSats} sats`);
+        }
       }
-    }
 
-    return {
-      success: true,
-      preimage: result.quote.payment_preimage || '',
-      feeSats: quote.fee_reserve,
-      changeToken,
-    };
+      return {
+        success: true,
+        preimage: result.quote.payment_preimage || '',
+        feeSats: quote.fee_reserve,
+        changeToken,
+      };
+    } else {
+      // Payment didn't succeed — mark failed so recovery doesn't retry endlessly
+      db.prepare(`UPDATE pending_melts SET status = 'failed' WHERE quote_id = ?`).run(quote.quote);
+      return { success: false, error: 'Lightning payment failed' };
+    }
   } catch (error) {
     console.error('Melt error:', error);
     return {
@@ -198,6 +212,22 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
       error: error instanceof Error ? error.message : 'Lightning withdrawal failed',
     };
   }
+}
+
+/**
+ * Check the status of a melt quote — used by recovery to see if a pending melt actually went through.
+ */
+export async function checkMeltQuoteStatus(
+  quoteId: string
+): Promise<{ state: string; preimage?: string }> {
+  const w = await getWallet();
+  const quote = await w.checkMeltQuote(quoteId);
+  return { state: quote.state, preimage: quote.payment_preimage || undefined };
+}
+
+/** @deprecated Use meltWithRecovery instead — kept for backward compatibility */
+export async function meltToLightning(tokens: string[], invoice: string): Promise<MeltResult> {
+  return meltWithRecovery(tokens, invoice, 'unknown');
 }
 
 /**

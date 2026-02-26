@@ -95,6 +95,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_change_proofs_seller ON change_proofs(seller_pubkey);
 `);
 
+// Pending melts — tracks in-flight Lightning payments for crash recovery
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pending_melts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_pubkey TEXT NOT NULL,
+    quote_id TEXT NOT NULL,
+    proofs_json TEXT NOT NULL,
+    invoice TEXT NOT NULL,
+    amount_sats INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at INTEGER DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_pending_melts_status ON pending_melts(status);
+`);
+
 /**
  * Insert a change proof returned by the mint after a melt.
  * The token should already be encrypted before calling this.
