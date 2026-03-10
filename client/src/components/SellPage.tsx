@@ -8,17 +8,20 @@ import { useStash } from '../lib/useStash';
 import { hasAcknowledgedRecovery, getOrCreateIdentity } from '../lib/identity';
 import { copyToClipboard } from '../lib/clipboard';
 
-interface FileInfo {
-  name: string;
-  size: number;
-  type: string;
-}
+// Pre-computed confetti styles (module-level, generated once)
+const CONFETTI_STYLES = Array.from({ length: 40 }, (_, i) => ({
+  left: `${Math.random() * 100}%`,
+  backgroundColor: ['#f97316', '#6366f1', '#22c55e', '#eab308', '#ec4899', '#06b6d4'][i % 6],
+  animationDelay: `${Math.random() * 1.5}s`,
+  animationDuration: `${2 + Math.random() * 2}s`,
+  width: `${6 + Math.random() * 8}px`,
+  height: `${6 + Math.random() * 8}px`,
+}));
 
 export function SellPage() {
   const stash = useStash();
   const toast = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -30,11 +33,6 @@ export function SellPage() {
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
-    setFileInfo({
-      name: file.name,
-      size: file.size,
-      type: file.type || 'application/octet-stream',
-    });
   };
 
   const handleSubmit = async () => {
@@ -54,12 +52,6 @@ export function SellPage() {
     });
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   if (showRecoveryModal) {
     return <RecoveryTokenModal onComplete={() => setShowRecoveryModal(false)} />;
   }
@@ -67,50 +59,58 @@ export function SellPage() {
   // Success state
   if (stash.status === 'done' && stash.shareUrl) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full text-center">
-          <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/20 rounded-2xl flex items-center justify-center">
-            <PartyPopper className="w-10 h-10 text-amber-400" />
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-4">Stash Created!</h1>
-          <p className="text-slate-400 mb-8">Share this link with buyers:</p>
-
-          <div className="bg-slate-800 rounded-xl p-4 mb-6">
-            <code className="text-orange-400 break-all">{stash.shareUrl}</code>
-          </div>
-
-          <button
-            onClick={async () => {
-              const success = await copyToClipboard(stash.shareUrl!);
-              if (success) {
-                toast.showToast('Link copied!', 'success');
-              } else {
-                toast.showToast('Failed to copy link', 'error');
-              }
-            }}
-            className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
-                     text-white font-semibold rounded-xl transition-colors"
-          >
-            Copy Link
-          </button>
-
-          <Link
-            to="/dashboard"
-            className="block w-full mt-6 py-3 px-6 bg-slate-800 border border-slate-600 
-                     text-white font-semibold rounded-xl hover:bg-slate-700 transition-colors text-center"
-          >
-            Go to Dashboard
-          </Link>
-
-          <button
-            onClick={() => stash.reset()}
-            className="block w-full mt-3 py-3 px-6 text-slate-400 
-                     hover:text-slate-200 transition-colors text-sm"
-          >
-            Create Another Stash
-          </button>
+      <>
+        <div className="confetti-container">
+          {CONFETTI_STYLES.map((style, i) => (
+            <div key={i} className="confetti-piece" style={style} />
+          ))}
         </div>
-      </div>
+
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+          <div className="max-w-lg w-full text-center animate-scale-in">
+            <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/20 rounded-2xl flex items-center justify-center">
+              <PartyPopper className="w-10 h-10 text-amber-400" />
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-4">Stash Created!</h1>
+            <p className="text-slate-400 mb-8">Share this link with buyers:</p>
+
+            <div className="bg-slate-800 rounded-xl p-4 mb-6">
+              <code className="text-orange-400 break-all">{stash.shareUrl}</code>
+            </div>
+
+            <button
+              onClick={async () => {
+                const success = await copyToClipboard(stash.shareUrl!);
+                if (success) {
+                  toast.showToast('Link copied!', 'success');
+                } else {
+                  toast.showToast('Failed to copy link', 'error');
+                }
+              }}
+              className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
+                       text-white font-semibold rounded-xl transition-colors"
+            >
+              Copy Link
+            </button>
+
+            <Link
+              to="/dashboard"
+              className="block w-full mt-6 py-3 px-6 bg-slate-800 border border-slate-600 
+                       text-white font-semibold rounded-xl hover:bg-slate-700 transition-colors text-center"
+            >
+              Go to Dashboard
+            </Link>
+
+            <button
+              onClick={() => stash.reset()}
+              className="block w-full mt-3 py-3 px-6 text-slate-400 
+                       hover:text-slate-200 transition-colors text-sm"
+            >
+              Create Another Stash
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -132,15 +132,6 @@ export function SellPage() {
         {/* File Upload */}
         <div className="mb-8">
           <FileUploader onFileSelect={handleFileSelect} disabled={stash.status !== 'idle'} />
-
-          {fileInfo && (
-            <div className="mt-4 bg-slate-800 rounded-xl p-4">
-              <p className="text-white font-medium">{fileInfo.name}</p>
-              <p className="text-slate-400 text-sm">
-                {formatFileSize(fileInfo.size)} • {fileInfo.type}
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Form Fields */}

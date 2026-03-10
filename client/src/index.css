@@ -263,3 +263,74 @@ body.modal-open {
   overflow: hidden;
   padding-right: 6px;
 }
+
+/* Confetti celebration */
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-100%) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  animation: confettiFall 3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Skeleton loading */
+@keyframes skeletonPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(51, 65, 85, 0.4) 25%,
+    rgba(71, 85, 105, 0.6) 50%,
+    rgba(51, 65, 85, 0.4) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* Success scale-in animation */
+@keyframes scaleIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
+}

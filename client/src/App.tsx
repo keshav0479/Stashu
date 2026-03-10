@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BarChart3, Key, Zap, Upload } from 'lucide-react';
+import { BarChart3, Key, Zap, Upload, Lock, Send, Download } from 'lucide-react';
 import { hasIdentity } from './lib/identity';
 import logo from './assets/logo.webp';
 import './index.css';
@@ -66,9 +66,48 @@ function App() {
             </Link>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
+        {/* How it Works */}
+        <div className="w-full max-w-2xl relative z-10 px-4 mt-8">
+          <h2 className="text-center text-sm font-semibold text-slate-500 uppercase tracking-widest mb-6">
+            How it works
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              {
+                step: 1,
+                icon: <Lock className="w-5 h-5 text-orange-400" />,
+                title: 'Encrypt & Upload',
+                desc: 'Your file is encrypted in-browser before upload. The server never sees it.',
+              },
+              {
+                step: 2,
+                icon: <Send className="w-5 h-5 text-indigo-400" />,
+                title: 'Share the Link',
+                desc: 'Set your price in sats and share the link with anyone.',
+              },
+              {
+                step: 3,
+                icon: <Download className="w-5 h-5 text-emerald-400" />,
+                title: 'Get Paid',
+                desc: 'Buyer pays via Lightning or Cashu. You earn sats instantly.',
+              },
+            ].map((item) => (
+              <div
+                key={item.step}
+                className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-5 text-center"
+              >
+                <div className="w-10 h-10 mx-auto mb-3 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
+                  {item.icon}
+                </div>
+                <div className="text-xs font-bold text-slate-500 mb-1">STEP {item.step}</div>
+                <h3 className="text-white font-semibold text-sm mb-1">{item.title}</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       <footer className="pt-3 pb-2 text-center relative z-10">
         <div className="flex items-center justify-center gap-6 mb-2">
           <a

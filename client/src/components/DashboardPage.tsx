@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BarChart3,
   XCircle,
   Copy,
   Package,
@@ -138,15 +137,67 @@ export function DashboardPage() {
     );
   }
 
-  // Loading state
+  // Loading state — skeleton UI
   if (state === 'loading') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
-            <BarChart3 className="w-8 h-8 text-slate-400 animate-pulse" />
+      <div className="min-h-screen bg-slate-900 py-12 px-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Header skeleton */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <div className="skeleton h-4 w-24 mb-3" />
+              <div className="skeleton h-8 w-48" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="skeleton h-10 w-10 rounded-xl" />
+              <div className="skeleton h-10 w-28 rounded-xl" />
+            </div>
           </div>
-          <p className="text-slate-400">Loading dashboard...</p>
+
+          {/* Earnings card skeleton */}
+          <div className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-8 mb-8">
+            <div className="flex items-center gap-12">
+              <div>
+                <div className="skeleton h-4 w-24 mb-3" />
+                <div className="skeleton h-10 w-32" />
+              </div>
+              <div className="hidden sm:block w-px h-12 bg-white/5" />
+              <div>
+                <div className="skeleton h-4 w-28 mb-3" />
+                <div className="skeleton h-8 w-20" />
+              </div>
+            </div>
+          </div>
+
+          {/* Stash list skeleton */}
+          <div className="skeleton h-6 w-28 mb-4" />
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-6"
+                style={{ opacity: 1 - i * 0.2 }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="skeleton h-5 w-40 mb-2" />
+                    <div className="skeleton h-3 w-56" />
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <div className="skeleton h-7 w-8 mx-auto mb-1" />
+                      <div className="skeleton h-3 w-12" />
+                    </div>
+                    <div className="text-center">
+                      <div className="skeleton h-7 w-8 mx-auto mb-1" />
+                      <div className="skeleton h-3 w-16" />
+                    </div>
+                    <div className="skeleton h-9 w-9 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
