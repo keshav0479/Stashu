@@ -49,9 +49,9 @@ stashRoutes.post('/', async (c) => {
       encrypt(body.secretKey),
       pubkey, // Use authed pubkey, not body.sellerPubkey (prevents spoofing)
       body.priceSats,
-      body.title,
-      body.description || null,
-      body.fileName,
+      encrypt(body.title),
+      body.description ? encrypt(body.description) : null,
+      encrypt(body.fileName),
       body.fileSize,
       body.previewUrl || null
     );
@@ -99,15 +99,16 @@ stashRoutes.get('/:id', async (c) => {
       );
     }
 
-    // Convert snake_case to camelCase
+    // Convert snake_case to camelCase and decrypt metadata
+    const raw = stash as any;
     const response: StashPublicInfo = {
-      id: stash.id,
-      title: stash.title,
-      description: stash.description,
-      fileName: (stash as any).file_name,
-      fileSize: (stash as any).file_size,
-      priceSats: (stash as any).price_sats,
-      previewUrl: (stash as any).preview_url,
+      id: raw.id,
+      title: decrypt(raw.title),
+      description: raw.description ? decrypt(raw.description) : undefined,
+      fileName: decrypt(raw.file_name),
+      fileSize: raw.file_size,
+      priceSats: raw.price_sats,
+      previewUrl: raw.preview_url,
     };
 
     return c.json<APIResponse<StashPublicInfo>>({

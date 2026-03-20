@@ -278,4 +278,32 @@ if (
   }
 }
 
+// One-time migration: encrypt plaintext stash metadata (title, description, file_name).
+// Encrypted values contain ":" (nonce:ciphertext). Plaintext values don't.
+{
+  const { encrypt } = await import('../lib/encryption.js');
+
+  const plaintextMeta = db
+    .prepare(`SELECT id, title, description, file_name FROM stashes WHERE title NOT LIKE '%:%'`)
+    .all() as Array<{ id: string; title: string; description: string | null; file_name: string }>;
+
+  if (plaintextMeta.length > 0) {
+    const update = db.prepare(
+      `UPDATE stashes SET title = ?, description = ?, file_name = ? WHERE id = ?`
+    );
+    const migrateAll = db.transaction(() => {
+      for (const row of plaintextMeta) {
+        update.run(
+          encrypt(row.title),
+          row.description ? encrypt(row.description) : null,
+          encrypt(row.file_name),
+          row.id
+        );
+      }
+    });
+    migrateAll();
+    console.log(`🔐 Encrypted metadata for ${plaintextMeta.length} stash(es) in DB.`);
+  }
+}
+
 export default db;

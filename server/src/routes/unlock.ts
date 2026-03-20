@@ -56,7 +56,7 @@ unlockRoutes.post('/:id', async (c) => {
           data: {
             secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
-            fileName: stash.file_name,
+            fileName: decrypt(stash.file_name),
           },
         });
       } else if (existingPayment.status === 'pending') {

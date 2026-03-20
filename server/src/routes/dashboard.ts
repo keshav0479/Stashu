@@ -41,7 +41,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
 
     const stashes: SellerStashStats[] = stashRows.map((row) => ({
       id: row.id,
-      title: row.title,
+      title: decrypt(row.title),
       priceSats: row.price_sats,
       unlockCount: row.unlock_count,
       totalEarned: row.total_earned,

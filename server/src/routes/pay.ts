@@ -85,7 +85,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           paid: true,
           secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
-          fileName: stash.file_name,
+          fileName: decrypt(stash.file_name),
         },
       });
     }
@@ -119,7 +119,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
             paid: true,
             secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
-            fileName: stash.file_name,
+            fileName: decrypt(stash.file_name),
           },
         });
       }
@@ -188,7 +188,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           paid: true,
           secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
-          fileName: stash.file_name,
+          fileName: decrypt(stash.file_name),
         },
       });
     } catch (mintError) {
