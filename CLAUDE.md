@@ -81,6 +81,47 @@ All endpoints return `{ success: true, data: T }` or `{ success: false, error: s
 
 Client routes: `/` (home), `/sell` (create stash), `/s/:id` (buyer unlock), `/dashboard` (seller view), `/restore` (import nsec), `/settings` (auto-settlement).
 
+## Decision-Making Rules
+
+Before modifying any Cashu, Nostr, or cryptography code:
+
+1. **Check the actual spec first.** WebFetch these before writing code:
+   - Cashu NUTs: `https://github.com/cashubtc/nuts` (especially NUT-00, NUT-03, NUT-04, NUT-05, NUT-11)
+   - Nostr NIPs: `https://github.com/nostr-protocol/nips` (especially NIP-98, NIP-44, NIP-01)
+   - Blossom BUDs: `https://github.com/hzrd149/blossom` (BUD-02 for uploads)
+
+2. **Check installed dependency APIs.** Read the actual types in `node_modules/@cashu/cashu-ts/` — don't guess from training data. Run `npm view <pkg> version` to check if updates exist.
+
+3. **Don't assume training data is current.** Cashu and Nostr evolve fast. If uncertain about an API or protocol detail, WebSearch or WebFetch the source of truth before proceeding.
+
+4. **Security decisions must state the threat model.** When adding encryption, auth, or validation, always document: what it protects against, what it does NOT protect against, and what would be needed for full protection.
+
+5. **Test roundtrips.** Any encrypt/decrypt, encode/decode, or serialize/deserialize change needs a test proving the roundtrip works.
+
+## Encryption at Rest
+
+All sensitive text columns are encrypted with XChaCha20-Poly1305 using `TOKEN_ENCRYPTION_KEY`. Encrypted format: `nonce:ciphertext` (hex-encoded). This protects against DB backup leaks and SQL injection reads. It does NOT protect against full server compromise (key is co-located). The v2 roadmap (NIP-44 + NUT-11 P2PK) is the path to true zero-knowledge.
+
+Migrations use a `schema_version` table to track which migrations have run — never sniff content to detect encrypted vs plaintext.
+
+## Before Committing Changes
+
+For changes that touch **payment rails** (pay.ts, unlock.ts, cashu.ts, autosettle.ts, withdraw.ts, recovery.ts, db/index.ts):
+
+1. Run `npm test` and confirm all pass
+2. Manually trace the happy path: does money still flow correctly? (create stash → pay invoice → poll status → unlock → withdraw)
+3. Check idempotency: can the same payment be submitted twice without double-paying?
+4. Check crash recovery: if the server dies mid-payment, does recovery.ts handle it?
+
+For changes that do **not** touch payment rails (UI, docs, logging, types, validation on non-payment fields): run `npm test` only.
+
+## Keeping Docs Up to Date
+
+Two different update cadences:
+
+- **Security model docs** (README security section, known limitations): update in the same commit that changes the underlying behavior. Stale security docs are actively misleading — worse than no docs.
+- **Roadmap, features, CHANGELOG**: update at the end of each phase, not every commit. Mid-phase state is incomplete and creates noise.
+
 ## Code Style
 
 - Prettier: single quotes, semicolons, 100 char print width, trailing commas (es5)

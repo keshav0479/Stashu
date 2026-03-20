@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Security
+
+- Encrypt `secret_key` (file decryption key) at rest — DB dumps can no longer decrypt uploaded files
+- Encrypt stash metadata (`title`, `description`, `file_name`) at rest
+- Encrypt Lightning addresses in `seller_settings` and `settlement_log` at rest — DB dumps can no longer deanonymize sellers
+- Replace content-sniffing migrations with versioned `schema_version` table — deterministic, safe for all data types
+
+### Changed
+
+- All sensitive DB columns now encrypted with XChaCha20-Poly1305 (`TOKEN_ENCRYPTION_KEY`)
+
 ## [0.1.0] - 2026-03-10
 
 Initial release. Stashu V1 is a working pay-to-unlock file marketplace with trusted escrow.
