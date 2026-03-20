@@ -19,19 +19,44 @@ stashRoutes.post('/', async (c) => {
     const body = await c.req.json<CreateStashRequest>();
 
     // Validate required fields
-    if (
-      !body.blobUrl ||
-      !body.secretKey ||
-      !body.priceSats ||
-      !body.title ||
-      !body.fileSize ||
-      !body.fileName
-    ) {
+    if (!body.blobUrl || !body.secretKey || !body.title || !body.fileName) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Missing required fields' }, 400);
+    }
+
+    // Validate blobUrl is a valid URL
+    try {
+      new URL(body.blobUrl);
+    } catch {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid blobUrl' }, 400);
+    }
+
+    // Validate price
+    if (!Number.isInteger(body.priceSats) || body.priceSats < 1) {
       return c.json<APIResponse<never>>(
-        {
-          success: false,
-          error: 'Missing required fields',
-        },
+        { success: false, error: 'priceSats must be a positive integer' },
+        400
+      );
+    }
+
+    // Validate file size (1 byte – 100 MB)
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    if (!Number.isInteger(body.fileSize) || body.fileSize < 1 || body.fileSize > MAX_FILE_SIZE) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'fileSize must be between 1 and 104857600 bytes' },
+        400
+      );
+    }
+
+    // Validate text lengths
+    if (body.title.length > 200) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'title exceeds 200 characters' },
+        400
+      );
+    }
+    if (body.description && body.description.length > 2000) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'description exceeds 2000 characters' },
         400
       );
     }
