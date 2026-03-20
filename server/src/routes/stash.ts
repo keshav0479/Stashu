@@ -9,6 +9,7 @@ import type {
   StashPublicInfo,
   APIResponse,
 } from '../../../shared/types.js';
+import type { StashRow } from '../db/types.js';
 
 export const stashRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -112,7 +113,10 @@ stashRoutes.get('/:id', async (c) => {
       FROM stashes WHERE id = ?
     `);
 
-    const stash = stmt.get(id) as StashPublicInfo | undefined;
+    const stash = stmt.get(id) as Pick<
+      StashRow,
+      'id' | 'title' | 'description' | 'file_name' | 'file_size' | 'price_sats' | 'preview_url'
+    > | null;
 
     if (!stash) {
       return c.json<APIResponse<never>>(
@@ -125,15 +129,14 @@ stashRoutes.get('/:id', async (c) => {
     }
 
     // Convert snake_case to camelCase and decrypt metadata
-    const raw = stash as any;
     const response: StashPublicInfo = {
-      id: raw.id,
-      title: decrypt(raw.title),
-      description: raw.description ? decrypt(raw.description) : undefined,
-      fileName: decrypt(raw.file_name),
-      fileSize: raw.file_size,
-      priceSats: raw.price_sats,
-      previewUrl: raw.preview_url,
+      id: stash.id,
+      title: decrypt(stash.title),
+      description: stash.description ? decrypt(stash.description) : undefined,
+      fileName: decrypt(stash.file_name),
+      fileSize: stash.file_size,
+      priceSats: stash.price_sats,
+      previewUrl: stash.preview_url ?? undefined,
     };
 
     return c.json<APIResponse<StashPublicInfo>>({

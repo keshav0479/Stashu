@@ -5,6 +5,7 @@ import { verifyAndSwapToken } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
+import type { StashRow, PaymentRow } from '../db/types.js';
 
 export const unlockRoutes = new Hono();
 
@@ -29,7 +30,10 @@ unlockRoutes.post('/:id', async (c) => {
       SELECT id, blob_url, secret_key, file_name, price_sats, seller_pubkey 
       FROM stashes WHERE id = ?
     `);
-    const stash = stashStmt.get(stashId) as any;
+    const stash = stashStmt.get(stashId) as Pick<
+      StashRow,
+      'id' | 'blob_url' | 'secret_key' | 'file_name' | 'price_sats' | 'seller_pubkey'
+    > | null;
 
     if (!stash) {
       return c.json<APIResponse<never>>(
@@ -46,7 +50,9 @@ unlockRoutes.post('/:id', async (c) => {
     const paymentId = `${stashId}-${tokenHash.slice(0, 16)}`;
 
     // Check if payment already exists
-    const existingPayment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId) as any;
+    const existingPayment = db
+      .prepare('SELECT * FROM payments WHERE id = ?')
+      .get(paymentId) as PaymentRow | null;
 
     if (existingPayment) {
       if (existingPayment.status === 'paid') {

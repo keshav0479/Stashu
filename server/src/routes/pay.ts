@@ -8,6 +8,7 @@ import {
 } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import type { PayInvoiceResponse, PayStatusResponse, APIResponse } from '../../../shared/types.js';
+import type { StashRow, PaymentRow } from '../db/types.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 
 export const payRoutes = new Hono();
@@ -58,7 +59,9 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     const paymentId = `ln-${quoteId}`;
 
     // Look up the quote binding (created at invoice time)
-    const existingPayment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId) as any;
+    const existingPayment = db
+      .prepare('SELECT * FROM payments WHERE id = ?')
+      .get(paymentId) as PaymentRow | null;
 
     // Reject if no binding exists (quote was not created through our API)
     if (!existingPayment) {
@@ -77,7 +80,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     if (existingPayment.status === 'paid') {
       const stash = db
         .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
-        .get(stashId) as any;
+        .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'file_name'>;
 
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,
@@ -107,12 +110,15 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     if (claimed.changes === 0) {
       // Another request is already processing or has completed — re-check status
-      const current = db.prepare('SELECT status FROM payments WHERE id = ?').get(paymentId) as any;
+      const current = db.prepare('SELECT status FROM payments WHERE id = ?').get(paymentId) as Pick<
+        PaymentRow,
+        'status'
+      > | null;
 
       if (current?.status === 'paid') {
         const stash = db
           .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
-          .get(stashId) as any;
+          .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'file_name'>;
         return c.json<APIResponse<PayStatusResponse>>({
           success: true,
           data: {
@@ -145,7 +151,10 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       .prepare(
         'SELECT id, price_sats, secret_key, blob_url, file_name, seller_pubkey FROM stashes WHERE id = ?'
       )
-      .get(stashId) as any;
+      .get(stashId) as Pick<
+      StashRow,
+      'id' | 'price_sats' | 'secret_key' | 'blob_url' | 'file_name' | 'seller_pubkey'
+    > | null;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
