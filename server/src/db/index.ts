@@ -239,4 +239,43 @@ if (
   }
 }
 
+// One-time migration: encrypt any plaintext secret_key values in stashes.
+// Encrypted values use "nonce:ciphertext" format (contain ":").
+// Plaintext keys are hex strings without ":".
+{
+  const { encrypt, decrypt } = await import('../lib/encryption.js');
+
+  // Verify existing encrypted keys are decryptable (key-rotation safety)
+  const encryptedKeys = db
+    .prepare(`SELECT id, secret_key FROM stashes WHERE secret_key LIKE '%:%'`)
+    .all() as Array<{ id: string; secret_key: string }>;
+
+  for (const row of encryptedKeys) {
+    try {
+      decrypt(row.secret_key);
+    } catch {
+      console.error(
+        `❌ TOKEN_ENCRYPTION_KEY cannot decrypt secret_key in stash ${row.id}.\n` +
+          '   Did you rotate the key? Restore the previous key or re-encrypt the rows.'
+      );
+      process.exit(1);
+    }
+  }
+
+  const plaintextKeys = db
+    .prepare(`SELECT id, secret_key FROM stashes WHERE secret_key NOT LIKE '%:%'`)
+    .all() as Array<{ id: string; secret_key: string }>;
+
+  if (plaintextKeys.length > 0) {
+    const update = db.prepare(`UPDATE stashes SET secret_key = ? WHERE id = ?`);
+    const migrateAll = db.transaction(() => {
+      for (const row of plaintextKeys) {
+        update.run(encrypt(row.secret_key), row.id);
+      }
+    });
+    migrateAll();
+    console.log(`🔐 Encrypted ${plaintextKeys.length} plaintext secret key(s) in DB.`);
+  }
+}
+
 export default db;

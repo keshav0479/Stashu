@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
+import { encrypt, decrypt } from '../lib/encryption.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
   CreateStashRequest,
@@ -45,7 +46,7 @@ stashRoutes.post('/', async (c) => {
     stmt.run(
       id,
       body.blobUrl,
-      body.secretKey,
+      encrypt(body.secretKey),
       pubkey, // Use authed pubkey, not body.sellerPubkey (prevents spoofing)
       body.priceSats,
       body.title,

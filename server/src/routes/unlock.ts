@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { createHash } from 'crypto';
 import db from '../db/index.js';
 import { verifyAndSwapToken } from '../lib/cashu.js';
-import { encrypt } from '../lib/encryption.js';
+import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
 
@@ -54,7 +54,7 @@ unlockRoutes.post('/:id', async (c) => {
         return c.json<APIResponse<UnlockResponse>>({
           success: true,
           data: {
-            secretKey: stash.secret_key,
+            secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
             fileName: stash.file_name,
           },
@@ -125,7 +125,7 @@ unlockRoutes.post('/:id', async (c) => {
     return c.json<APIResponse<UnlockResponse>>({
       success: true,
       data: {
-        secretKey: stash.secret_key,
+        secretKey: decrypt(stash.secret_key),
         blobUrl: stash.blob_url,
         fileName: stash.file_name,
       },

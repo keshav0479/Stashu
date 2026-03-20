@@ -6,7 +6,7 @@ import {
   mintAfterPayment,
   verifyAndSwapToken,
 } from '../lib/cashu.js';
-import { encrypt } from '../lib/encryption.js';
+import { encrypt, decrypt } from '../lib/encryption.js';
 import type { PayInvoiceResponse, PayStatusResponse, APIResponse } from '../../../shared/types.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 
@@ -83,7 +83,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         success: true,
         data: {
           paid: true,
-          secretKey: stash.secret_key,
+          secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
           fileName: stash.file_name,
         },
@@ -117,7 +117,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           success: true,
           data: {
             paid: true,
-            secretKey: stash.secret_key,
+            secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
             fileName: stash.file_name,
           },
@@ -186,7 +186,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         success: true,
         data: {
           paid: true,
-          secretKey: stash.secret_key,
+          secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
           fileName: stash.file_name,
         },
