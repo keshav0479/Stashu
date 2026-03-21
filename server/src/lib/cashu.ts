@@ -66,9 +66,12 @@ export async function verifyAndSwapToken(
     const totalValue = proofs.reduce((sum, proof) => sum + proof.amount, 0);
 
     if (totalValue < expectedSats) {
+      console.error(
+        `Token verification failed: insufficient value (${totalValue} < ${expectedSats})`
+      );
       return {
         success: false,
-        error: `Insufficient token value: ${totalValue} sats, expected ${expectedSats} sats`,
+        error: 'Insufficient token value',
       };
     }
 
@@ -164,9 +167,10 @@ export async function meltWithRecovery(
     const needed = quote.amount + quote.fee_reserve;
 
     if (totalValue < needed) {
+      console.error(`Melt failed: insufficient balance (${totalValue} < ${needed})`);
       return {
         success: false,
-        error: `Not enough balance. You have ${totalValue} sats but need ${needed} sats (${quote.amount} + ${quote.fee_reserve} fee)`,
+        error: 'Insufficient balance for withdrawal (including fees)',
       };
     }
 

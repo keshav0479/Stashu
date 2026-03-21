@@ -56,7 +56,7 @@ function insertPayment(stashId: string, token: string, status: string, sellerTok
     `INSERT INTO payments (id, stash_id, status, token_hash, seller_token, paid_at)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(
-    `${stashId}-${hash.slice(0, 16)}`,
+    `${stashId}-${hash}`,
     stashId,
     status,
     hash,

@@ -45,9 +45,9 @@ unlockRoutes.post('/:id', async (c) => {
       );
     }
 
-    // Create payment ID from token hash (for idempotency)
+    // Create payment ID from full token hash (for idempotency)
     const tokenHash = createHash('sha256').update(body.token).digest('hex');
-    const paymentId = `${stashId}-${tokenHash.slice(0, 16)}`;
+    const paymentId = `${stashId}-${tokenHash}`;
 
     // Check if payment already exists
     const existingPayment = db
@@ -101,7 +101,7 @@ unlockRoutes.post('/:id', async (c) => {
       return c.json<APIResponse<never>>(
         {
           success: false,
-          error: swapResult.error || 'Token verification failed',
+          error: 'Token verification failed',
         },
         400
       );
