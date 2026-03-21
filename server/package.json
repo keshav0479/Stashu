@@ -16,7 +16,7 @@
     "better-sqlite3": "^11.0.0",
     "hono": "^4.0.0",
     "nostr-tools": "^2.23.0",
-    "uuid": "^11.0.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
