@@ -42,6 +42,19 @@ export function UnlockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, unlock.loadStash]);
 
+  // After stash loads, try to recover a previous payment via claim token
+  const claimAttempted = useRef(false);
+  useEffect(() => {
+    claimAttempted.current = false;
+  }, [id]);
+  useEffect(() => {
+    if ((unlock.status === 'ready' || unlock.status === 'claiming') && !claimAttempted.current) {
+      claimAttempted.current = true;
+      unlock.tryClaimToken();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlock.status, unlock.tryClaimToken]);
+
   // Cleanup polling and timer on unmount
   useEffect(() => {
     return () => {
@@ -51,8 +64,7 @@ export function UnlockPage() {
   }, []);
 
   const handleLnUnlock = useCallback(
-    (data: { secretKey: string; blobUrl: string; fileName?: string }) => {
-      // Use the unlock hook's internal mechanism to handle decryption
+    (data: { secretKey: string; blobUrl: string; fileName?: string; claimToken?: string }) => {
       unlock.submitLightningResult(data);
     },
     [unlock]
@@ -103,6 +115,7 @@ export function UnlockPage() {
               secretKey: status.secretKey,
               blobUrl: status.blobUrl,
               fileName: status.fileName,
+              claimToken: status.claimToken,
             });
           }
         } catch (err) {
@@ -138,7 +151,14 @@ export function UnlockPage() {
 
   // Auto-create or resume invoice when Lightning tab is active and stash is loaded
   useEffect(() => {
-    if (tab !== 'lightning' || !unlock.stash || invoice || lnLoading || unlock.status !== 'ready') {
+    if (
+      tab !== 'lightning' ||
+      !unlock.stash ||
+      invoice ||
+      lnLoading ||
+      unlock.status !== 'ready' ||
+      !claimAttempted.current
+    ) {
       return;
     }
 
@@ -223,6 +243,22 @@ export function UnlockPage() {
             <Squirrel className="w-8 h-8 text-amber-400" />
           </div>
           <p className="text-slate-400">Loading stash...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Checking previous payment via claim token (covers both the API call and file decryption)
+  if (unlock.status === 'claiming' || (unlock.status === 'decrypting' && !invoice && !token)) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-amber-500/20 rounded-2xl flex items-center justify-center animate-pulse">
+            <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+          </div>
+          <p className="text-slate-400">
+            {unlock.status === 'claiming' ? 'Checking previous payment...' : 'Decrypting file...'}
+          </p>
         </div>
       </div>
     );

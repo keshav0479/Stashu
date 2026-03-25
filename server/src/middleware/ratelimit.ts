@@ -20,7 +20,7 @@ setInterval(() => {
       store.delete(key);
     }
   }
-}, 300_000);
+}, 300_000).unref();
 
 // Cap store size to prevent memory abuse (evict oldest entries)
 const MAX_ENTRIES = 10_000;
@@ -59,11 +59,12 @@ function normalizeRoute(path: string): string {
  * Create a rate limiter middleware
  * @param windowMs Time window in milliseconds
  * @param maxRequests Maximum requests per window
+ * @param keyPrefix Optional fixed key prefix (bypasses route normalization for isolated buckets)
  */
-export function rateLimit(windowMs: number, maxRequests: number) {
+export function rateLimit(windowMs: number, maxRequests: number, keyPrefix?: string) {
   return async (c: Context, next: Next) => {
     const ip = getClientIp(c);
-    const route = normalizeRoute(c.req.path);
+    const route = keyPrefix || normalizeRoute(c.req.path);
     const key = `${ip}:${route}`;
     const now = Date.now();
     const entry = store.get(key);

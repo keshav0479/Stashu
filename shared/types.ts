@@ -81,6 +81,7 @@ export interface UnlockResponse {
   secretKey: string;
   blobUrl: string;
   fileName: string;
+  claimToken?: string;
 }
 
 // GET /api/earnings (for seller dashboard)
@@ -143,6 +144,7 @@ export interface PayStatusResponse {
   secretKey?: string;
   blobUrl?: string;
   fileName?: string;
+  claimToken?: string;
 }
 
 // POST /api/withdraw/resolve-address

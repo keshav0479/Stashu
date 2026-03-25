@@ -6,7 +6,7 @@
     "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
     "start": "node --env-file=.env dist/server/src/index.js",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --experimental-test-module-mocks --test src/**/*.test.ts"
   },
   "dependencies": {
     "@cashu/cashu-ts": "^3.6.1",

@@ -1,10 +1,17 @@
 import { useState, useCallback } from 'react';
-import { getStashInfo, unlockStash } from './api';
+import { getStashInfo, unlockStash, claimStash } from './api';
 import { decryptFile, fromBase64 } from './crypto';
 import { fetchFromBlossom } from './blossom';
 import type { StashPublicInfo } from '../../../shared/types';
 
-export type UnlockStatus = 'loading' | 'ready' | 'unlocking' | 'decrypting' | 'done' | 'error';
+export type UnlockStatus =
+  | 'loading'
+  | 'claiming'
+  | 'ready'
+  | 'unlocking'
+  | 'decrypting'
+  | 'done'
+  | 'error';
 
 export interface UnlockState {
   status: UnlockStatus;
@@ -23,11 +30,37 @@ export function useUnlock(stashId: string) {
     fileName: null,
   });
 
+  const decryptAndFinish = useCallback(
+    async (data: { secretKey: string; blobUrl: string; fileName?: string }) => {
+      setState((s) => ({ ...s, status: 'decrypting', error: null }));
+
+      const ciphertext = await fetchFromBlossom(data.blobUrl);
+
+      const [nonceB64, keyB64] = data.secretKey.split(':');
+      if (!nonceB64 || !keyB64) {
+        throw new Error('Invalid secret key format');
+      }
+      const nonce = fromBase64(nonceB64);
+      const key = fromBase64(keyB64);
+
+      const plaintext = await decryptFile(ciphertext, key, nonce);
+
+      const blob = new Blob([plaintext]);
+      const downloadUrl = URL.createObjectURL(blob);
+      const fileName = data.fileName || state.stash?.title || 'download';
+
+      setState((s) => ({ ...s, status: 'done', downloadUrl, fileName }));
+    },
+    [state.stash]
+  );
+
   const loadStash = useCallback(async () => {
     try {
       setState((s) => ({ ...s, status: 'loading', error: null }));
       const stash = await getStashInfo(stashId);
-      setState((s) => ({ ...s, status: 'ready', stash }));
+      // If a claim token exists, go straight to 'claiming' to avoid flashing payment UI
+      const hasClaimToken = !!localStorage.getItem(`stashu-claim-${stashId}`);
+      setState((s) => ({ ...s, status: hasClaimToken ? 'claiming' : 'ready', stash }));
     } catch (error) {
       setState((s) => ({
         ...s,
@@ -37,6 +70,27 @@ export function useUnlock(stashId: string) {
     }
   }, [stashId]);
 
+  const tryClaimToken = useCallback(async (): Promise<boolean> => {
+    const claimToken = localStorage.getItem(`stashu-claim-${stashId}`);
+    if (!claimToken) return false;
+
+    try {
+      setState((s) => ({ ...s, status: 'claiming', error: null }));
+      const result = await claimStash(stashId, claimToken);
+      await decryptAndFinish(result);
+      return true;
+    } catch (error) {
+      const status = (error as Error & { status?: number }).status;
+      if (status === 404 || status === 410) {
+        // Token is invalid or expired — remove it permanently
+        localStorage.removeItem(`stashu-claim-${stashId}`);
+      }
+      // For transient errors (network, 500), keep the token for next attempt
+      setState((s) => ({ ...s, status: 'ready' }));
+      return false;
+    }
+  }, [stashId, decryptAndFinish]);
+
   const submitToken = useCallback(
     async (token: string) => {
       if (!token.trim()) {
@@ -45,45 +99,24 @@ export function useUnlock(stashId: string) {
       }
 
       try {
-        // Step 1: Unlock with token
         setState((s) => ({ ...s, status: 'unlocking', error: null }));
         const unlockResult = await unlockStash(stashId, token);
 
-        // Step 2: Fetch encrypted file from Blossom
-        setState((s) => ({ ...s, status: 'decrypting' }));
-        const ciphertext = await fetchFromBlossom(unlockResult.blobUrl);
-
-        // Step 3: Parse secret key (format: base64Nonce:base64Key)
-        const [nonceB64, keyB64] = unlockResult.secretKey.split(':');
-        if (!nonceB64 || !keyB64) {
-          throw new Error('Invalid secret key format');
+        // Store claim token for re-download
+        if (unlockResult.claimToken) {
+          localStorage.setItem(`stashu-claim-${stashId}`, unlockResult.claimToken);
         }
-        const nonce = fromBase64(nonceB64);
-        const key = fromBase64(keyB64);
 
-        // Step 4: Decrypt the file
-        const plaintext = await decryptFile(ciphertext, key, nonce);
-
-        // Step 5: Create download URL
-        const blob = new Blob([plaintext]);
-        const downloadUrl = URL.createObjectURL(blob);
-        const fileName = unlockResult.fileName || state.stash?.title || 'download';
-
-        setState((s) => ({
-          ...s,
-          status: 'done',
-          downloadUrl,
-          fileName,
-        }));
+        await decryptAndFinish(unlockResult);
       } catch (error) {
         setState((s) => ({
           ...s,
-          status: 'ready', // Go back to ready state so user can retry
+          status: 'ready',
           error: error instanceof Error ? error.message : 'Unlock failed',
         }));
       }
     },
-    [stashId, state.stash]
+    [stashId, decryptAndFinish]
   );
 
   const download = useCallback(() => {
@@ -102,35 +135,19 @@ export function useUnlock(stashId: string) {
    * Receives secretKey + blobUrl directly from the server polling response.
    */
   const submitLightningResult = useCallback(
-    async (data: { secretKey: string; blobUrl: string; fileName?: string }) => {
+    async (data: {
+      secretKey: string;
+      blobUrl: string;
+      fileName?: string;
+      claimToken?: string;
+    }) => {
       try {
-        setState((s) => ({ ...s, status: 'decrypting', error: null }));
-
-        // Fetch encrypted file from Blossom
-        const ciphertext = await fetchFromBlossom(data.blobUrl);
-
-        // Parse secret key (format: base64Nonce:base64Key)
-        const [nonceB64, keyB64] = data.secretKey.split(':');
-        if (!nonceB64 || !keyB64) {
-          throw new Error('Invalid secret key format');
+        // Store claim token for re-download
+        if (data.claimToken) {
+          localStorage.setItem(`stashu-claim-${stashId}`, data.claimToken);
         }
-        const nonce = fromBase64(nonceB64);
-        const key = fromBase64(keyB64);
 
-        // Decrypt the file
-        const plaintext = await decryptFile(ciphertext, key, nonce);
-
-        // Create download URL
-        const blob = new Blob([plaintext]);
-        const downloadUrl = URL.createObjectURL(blob);
-        const fileName = data.fileName || state.stash?.title || 'download';
-
-        setState((s) => ({
-          ...s,
-          status: 'done',
-          downloadUrl,
-          fileName,
-        }));
+        await decryptAndFinish(data);
       } catch (error) {
         setState((s) => ({
           ...s,
@@ -139,7 +156,7 @@ export function useUnlock(stashId: string) {
         }));
       }
     },
-    [state.stash]
+    [stashId, decryptAndFinish]
   );
 
   const reset = useCallback(() => {
@@ -158,6 +175,7 @@ export function useUnlock(stashId: string) {
   return {
     ...state,
     loadStash,
+    tryClaimToken,
     submitToken,
     submitLightningResult,
     download,

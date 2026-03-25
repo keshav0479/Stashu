@@ -174,6 +174,21 @@ function cleanupStaleQuotes() {
   if (recovered.changes > 0) {
     console.log(`🔄 Reset ${recovered.changes} stuck processing payments to pending`);
   }
+
+  // Null out expired claim tokens (column added in migration v5)
+  try {
+    const expiredClaims = db
+      .prepare(
+        `UPDATE payments SET claim_token = NULL, claim_expires_at = NULL
+         WHERE claim_token IS NOT NULL AND claim_expires_at < ?`
+      )
+      .run(Math.floor(Date.now() / 1000));
+    if (expiredClaims.changes > 0) {
+      console.log(`🧹 Cleaned up ${expiredClaims.changes} expired claim token(s)`);
+    }
+  } catch {
+    // Column doesn't exist yet (pre-migration v5), skip
+  }
 }
 
 // Run cleanup on startup and every 5 minutes
@@ -323,6 +338,16 @@ const currentVersion = (
           }
           console.log(`🔐 Encrypted ${logs.length} LN address(es) in settlement_log.`);
         }
+      },
+    },
+    {
+      version: 5,
+      name: 'add claim token columns to payments',
+      run: () => {
+        db.exec(`ALTER TABLE payments ADD COLUMN claim_token TEXT DEFAULT NULL`);
+        db.exec(`ALTER TABLE payments ADD COLUMN claim_expires_at INTEGER DEFAULT NULL`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_claim_token ON payments(claim_token)`);
+        console.log('🎫 Added claim_token and claim_expires_at columns to payments.');
       },
     },
   ];

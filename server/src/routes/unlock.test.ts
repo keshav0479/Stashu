@@ -90,7 +90,7 @@ describe('POST /api/unlock/:id', () => {
     assert.equal(res.status, 404);
   });
 
-  it('returns unlock data for already-paid token (idempotent)', async () => {
+  it('returns unlock data with claimToken for already-paid token (idempotent)', async () => {
     insertStash();
     insertPayment(TEST_STASH.id, 'cashuPaidToken', 'paid', 'cashuSellerToken');
 
@@ -104,6 +104,8 @@ describe('POST /api/unlock/:id', () => {
     assert.equal(data.secretKey, TEST_STASH.secretKey);
     assert.equal(data.blobUrl, TEST_STASH.blobUrl);
     assert.equal(data.fileName, TEST_STASH.fileName);
+    assert.ok(data.claimToken, 'should return a claimToken');
+    assert.equal(data.claimToken.length, 64, 'claimToken should be 64 hex chars');
   });
 
   it('returns 409 for pending payment', async () => {
@@ -129,5 +131,74 @@ describe('POST /api/unlock/:id', () => {
     });
     assert.equal(res.status, 400);
     assert.match((await res.json()).error, /failed/i);
+  });
+});
+
+describe('GET /api/unlock/:id/claim', () => {
+  function insertPaidPaymentWithClaim(stashId: string, claimToken: string, claimExpiresAt: number) {
+    db.prepare(
+      `INSERT INTO payments (id, stash_id, status, token_hash, seller_token, claim_token, claim_expires_at, paid_at)
+       VALUES (?, ?, 'paid', ?, ?, ?, ?, ?)`
+    ).run(
+      `${stashId}-claim-test`,
+      stashId,
+      'claim-hash',
+      encrypt('cashuSellerToken'),
+      claimToken,
+      claimExpiresAt,
+      Math.floor(Date.now() / 1000)
+    );
+  }
+
+  it('returns unlock data for valid claim token', async () => {
+    insertStash();
+    const claimToken = 'a'.repeat(64);
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    insertPaidPaymentWithClaim(TEST_STASH.id, claimToken, expiresAt);
+
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}/claim?token=${claimToken}`);
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+    assert.equal(data.secretKey, TEST_STASH.secretKey);
+    assert.equal(data.blobUrl, TEST_STASH.blobUrl);
+    assert.equal(data.fileName, TEST_STASH.fileName);
+  });
+
+  it('returns 400 when token query param is missing', async () => {
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}/claim`);
+    assert.equal(res.status, 400);
+  });
+
+  it('returns 404 for invalid claim token', async () => {
+    insertStash();
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}/claim?token=${'b'.repeat(64)}`);
+    assert.equal(res.status, 404);
+  });
+
+  it('returns 410 for expired claim token', async () => {
+    insertStash();
+    const claimToken = 'c'.repeat(64);
+    const expiredAt = Math.floor(Date.now() / 1000) - 100; // expired 100s ago
+    insertPaidPaymentWithClaim(TEST_STASH.id, claimToken, expiredAt);
+
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}/claim?token=${claimToken}`);
+    assert.equal(res.status, 410);
+    assert.match((await res.json()).error, /expired/i);
+  });
+
+  it('returns 404 when claim token belongs to a different stash', async () => {
+    insertStash();
+    insertStash('other-stash');
+    const claimToken = 'd'.repeat(64);
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    insertPaidPaymentWithClaim('other-stash', claimToken, expiresAt);
+
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}/claim?token=${claimToken}`);
+    assert.equal(res.status, 404);
+  });
+
+  it('returns 404 for non-existent stash', async () => {
+    const res = await app.request(`/api/unlock/nonexistent/claim?token=${'e'.repeat(64)}`);
+    assert.equal(res.status, 404);
   });
 });

@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import db from '../db/index.js';
 import { verifyAndSwapToken } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
+import { rateLimit } from '../middleware/ratelimit.js';
 import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
 import type { StashRow, PaymentRow } from '../db/types.js';
 
@@ -57,12 +58,29 @@ unlockRoutes.post('/:id', async (c) => {
     if (existingPayment) {
       if (existingPayment.status === 'paid') {
         // Already paid - return the key (idempotent)
+        // Regenerate claim token if missing or expired
+        let claimToken = existingPayment.claim_token;
+        const now = Math.floor(Date.now() / 1000);
+        if (
+          !claimToken ||
+          !existingPayment.claim_expires_at ||
+          existingPayment.claim_expires_at < now
+        ) {
+          claimToken = randomBytes(32).toString('hex');
+          const claimExpiresAt = now + 3600;
+          db.prepare(`UPDATE payments SET claim_token = ?, claim_expires_at = ? WHERE id = ?`).run(
+            claimToken,
+            claimExpiresAt,
+            paymentId
+          );
+        }
         return c.json<APIResponse<UnlockResponse>>({
           success: true,
           data: {
             secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
             fileName: decrypt(stash.file_name),
+            claimToken,
           },
         });
       } else if (existingPayment.status === 'pending') {
@@ -116,13 +134,16 @@ unlockRoutes.post('/:id', async (c) => {
       );
     }
 
+    const claimToken = randomBytes(32).toString('hex');
+    const claimExpiresAt = Math.floor(Date.now() / 1000) + 3600; // 1hr
+
     db.prepare(
       `
-      UPDATE payments 
-      SET status = 'paid', seller_token = ?, paid_at = unixepoch()
+      UPDATE payments
+      SET status = 'paid', seller_token = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch()
       WHERE id = ?
     `
-    ).run(encrypt(swapResult.sellerToken), paymentId);
+    ).run(encrypt(swapResult.sellerToken), claimToken, claimExpiresAt, paymentId);
 
     // Trigger auto-settlement check (fire-and-forget)
     tryAutoSettle(stash.seller_pubkey).catch((err) =>
@@ -136,6 +157,7 @@ unlockRoutes.post('/:id', async (c) => {
         secretKey: decrypt(stash.secret_key),
         blobUrl: stash.blob_url,
         fileName: decrypt(stash.file_name),
+        claimToken,
       },
     });
   } catch (error) {
@@ -148,4 +170,45 @@ unlockRoutes.post('/:id', async (c) => {
       500
     );
   }
+});
+
+// GET /api/unlock/:id/claim?token=xxx - Re-download with a claim token
+unlockRoutes.get('/:id/claim', rateLimit(60_000, 10, '/api/unlock/claim'), async (c) => {
+  const stashId = c.req.param('id');
+  const claimToken = c.req.query('token');
+
+  if (!claimToken) {
+    return c.json<APIResponse<never>>({ success: false, error: 'Missing claim token' }, 400);
+  }
+
+  const payment = db
+    .prepare(
+      `SELECT claim_expires_at FROM payments WHERE stash_id = ? AND claim_token = ? AND status = 'paid'`
+    )
+    .get(stashId, claimToken) as Pick<PaymentRow, 'claim_expires_at'> | null;
+
+  if (!payment) {
+    return c.json<APIResponse<never>>({ success: false, error: 'Invalid claim token' }, 404);
+  }
+
+  if (!payment.claim_expires_at || payment.claim_expires_at < Math.floor(Date.now() / 1000)) {
+    return c.json<APIResponse<never>>({ success: false, error: 'Claim token has expired' }, 410);
+  }
+
+  const stash = db
+    .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
+    .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'file_name'> | null;
+
+  if (!stash) {
+    return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
+  }
+
+  return c.json<APIResponse<UnlockResponse>>({
+    success: true,
+    data: {
+      secretKey: decrypt(stash.secret_key),
+      blobUrl: stash.blob_url,
+      fileName: decrypt(stash.file_name),
+    },
+  });
 });

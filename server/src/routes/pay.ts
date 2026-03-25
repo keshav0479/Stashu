@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { randomBytes } from 'crypto';
 import db from '../db/index.js';
 import {
   createPaymentInvoice,
@@ -82,6 +83,23 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
         .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'file_name'>;
 
+      // Regenerate claim token if missing or expired
+      let claimToken = existingPayment.claim_token;
+      const now = Math.floor(Date.now() / 1000);
+      if (
+        !claimToken ||
+        !existingPayment.claim_expires_at ||
+        existingPayment.claim_expires_at < now
+      ) {
+        claimToken = randomBytes(32).toString('hex');
+        const claimExpiresAt = now + 3600;
+        db.prepare(`UPDATE payments SET claim_token = ?, claim_expires_at = ? WHERE id = ?`).run(
+          claimToken,
+          claimExpiresAt,
+          paymentId
+        );
+      }
+
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,
         data: {
@@ -89,6 +107,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
           fileName: decrypt(stash.file_name),
+          claimToken,
         },
       });
     }
@@ -119,6 +138,23 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         const stash = db
           .prepare('SELECT secret_key, blob_url, file_name FROM stashes WHERE id = ?')
           .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'file_name'>;
+
+        // Read claim token from the now-paid row
+        const paidRow = db
+          .prepare('SELECT claim_token, claim_expires_at FROM payments WHERE id = ?')
+          .get(paymentId) as Pick<PaymentRow, 'claim_token' | 'claim_expires_at'>;
+        let claimToken = paidRow?.claim_token ?? null;
+        const now = Math.floor(Date.now() / 1000);
+        if (!claimToken || !paidRow?.claim_expires_at || paidRow.claim_expires_at < now) {
+          claimToken = randomBytes(32).toString('hex');
+          const claimExpiresAt = now + 3600;
+          db.prepare(`UPDATE payments SET claim_token = ?, claim_expires_at = ? WHERE id = ?`).run(
+            claimToken,
+            claimExpiresAt,
+            paymentId
+          );
+        }
+
         return c.json<APIResponse<PayStatusResponse>>({
           success: true,
           data: {
@@ -126,6 +162,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
             secretKey: decrypt(stash.secret_key),
             blobUrl: stash.blob_url,
             fileName: decrypt(stash.file_name),
+            claimToken,
           },
         });
       }
@@ -184,9 +221,12 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         );
       }
 
+      const claimToken = randomBytes(32).toString('hex');
+      const claimExpiresAt = Math.floor(Date.now() / 1000) + 3600; // 1hr
+
       db.prepare(
-        `UPDATE payments SET status = 'paid', seller_token = ?, paid_at = unixepoch() WHERE id = ?`
-      ).run(encrypt(swapResult.sellerToken), paymentId);
+        `UPDATE payments SET status = 'paid', seller_token = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
+      ).run(encrypt(swapResult.sellerToken), claimToken, claimExpiresAt, paymentId);
 
       // Trigger auto-settlement check (fire-and-forget)
       tryAutoSettle(stash.seller_pubkey).catch((err) =>
@@ -200,6 +240,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           secretKey: decrypt(stash.secret_key),
           blobUrl: stash.blob_url,
           fileName: decrypt(stash.file_name),
+          claimToken,
         },
       });
     } catch (mintError) {

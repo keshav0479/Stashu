@@ -77,7 +77,7 @@ describe('GET /api/pay/:id/status/:quoteId', () => {
     assert.match((await res.json()).error, /does not match/i);
   });
 
-  it('returns unlock data when already paid', async () => {
+  it('returns unlock data with claimToken when already paid', async () => {
     insertStash();
     db.prepare(
       `INSERT INTO payments (id, stash_id, status, token_hash, seller_token, paid_at)
@@ -97,5 +97,7 @@ describe('GET /api/pay/:id/status/:quoteId', () => {
     assert.equal(data.secretKey, 'pay-secret-key');
     assert.equal(data.blobUrl, 'https://blossom.example.com/blob');
     assert.equal(data.fileName, 'file.pdf');
+    assert.ok(data.claimToken, 'should return a claimToken');
+    assert.equal(data.claimToken.length, 64, 'claimToken should be 64 hex chars');
   });
 });

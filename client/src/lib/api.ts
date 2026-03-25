@@ -74,6 +74,22 @@ export async function unlockStash(id: string, token: string): Promise<UnlockResp
   return result.data;
 }
 
+/**
+ * Re-fetch unlock data using a claim token (no re-payment needed)
+ */
+export async function claimStash(stashId: string, claimToken: string): Promise<UnlockResponse> {
+  const response = await fetch(
+    `${API_BASE}/unlock/${stashId}/claim?token=${encodeURIComponent(claimToken)}`
+  );
+  const result: APIResponse<UnlockResponse> = await response.json();
+  if (!result.success) {
+    const err = new Error(result.error) as Error & { status: number };
+    err.status = response.status;
+    throw err;
+  }
+  return result.data;
+}
+
 export async function getDashboard(pubkey: string): Promise<DashboardResponse> {
   const url = `${API_BASE}/dashboard/${pubkey}`;
   const response = await fetch(url, {

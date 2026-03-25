@@ -31,4 +31,6 @@ export interface PaymentRow {
   claimed: number;
   created_at: number;
   paid_at: number | null;
+  claim_token: string | null;
+  claim_expires_at: number | null;
 }
