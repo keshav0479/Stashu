@@ -107,6 +107,7 @@ export interface SellerStashStats {
 export interface DashboardResponse {
   stashes: SellerStashStats[];
   earnings: EarningsResponse;
+  storefrontEnabled: boolean;
 }
 
 // POST /api/withdraw/quote

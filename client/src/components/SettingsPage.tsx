@@ -398,9 +398,9 @@ export function SettingsPage() {
                   />
                 </button>
               </div>
-              {storefrontEnabled && (
-                <div className="mt-4 pt-4 border-t border-slate-700/50">
-                  <p className="text-slate-500 text-sm">
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
+                {storefrontEnabled && (
+                  <p className="text-slate-500 text-sm mb-3">
                     Your storefront:{' '}
                     <button
                       onClick={async () => {
@@ -415,14 +415,14 @@ export function SettingsPage() {
                       {window.location.origin}/p/{identity.npub.slice(0, 12)}…
                     </button>
                   </p>
-                  <div className="mt-3 p-3 bg-slate-700/30 border border-slate-700/50 rounded-lg">
-                    <p className="text-slate-400 text-xs">
-                      Your storefront URL contains your Nostr public key. Sharing it publicly will
-                      link your Nostr identity to your Stashu presence.
-                    </p>
-                  </div>
+                )}
+                <div className="p-3 bg-slate-700/30 border border-slate-700/50 rounded-lg">
+                  <p className="text-slate-400 text-xs">
+                    Your storefront URL contains your Nostr public key. Sharing it publicly will
+                    link your Nostr identity to your Stashu presence.
+                  </p>
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Public Key */}

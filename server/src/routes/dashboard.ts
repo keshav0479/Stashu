@@ -66,11 +66,16 @@ dashboardRoutes.get('/:pubkey', async (c) => {
     const tokens = tokenRows.map((r) => decrypt(r.seller_token));
     const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
 
+    const settingsRow = db
+      .prepare('SELECT storefront_enabled FROM seller_settings WHERE pubkey = ?')
+      .get(pubkey) as { storefront_enabled: number } | undefined;
+
     return c.json<APIResponse<DashboardResponse>>({
       success: true,
       data: {
         stashes,
         earnings: { tokens, totalSats },
+        storefrontEnabled: settingsRow?.storefront_enabled === 1,
       },
     });
   } catch (error) {
