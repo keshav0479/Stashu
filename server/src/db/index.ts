@@ -374,6 +374,32 @@ const currentVersion = (
         console.log('🏪 Added show_in_storefront column to stashes.');
       },
     },
+    {
+      version: 9,
+      name: 'add generated preview proof fields to stashes',
+      run: () => {
+        db.exec(`ALTER TABLE stashes ADD COLUMN generated_preview_payload TEXT DEFAULT NULL`);
+        db.exec(`ALTER TABLE stashes ADD COLUMN preview_proof TEXT DEFAULT NULL`);
+        db.exec(`ALTER TABLE stashes ADD COLUMN preview_secret TEXT DEFAULT NULL`);
+        console.log('🔎 Added generated preview proof fields to stashes.');
+      },
+    },
+    {
+      version: 10,
+      name: 'encrypt plaintext blob urls',
+      run: () => {
+        const rows = db.prepare(`SELECT id, blob_url FROM stashes`).all() as Array<{
+          id: string;
+          blob_url: string;
+        }>;
+        if (rows.length === 0) return;
+        const update = db.prepare(`UPDATE stashes SET blob_url = ? WHERE id = ?`);
+        for (const row of rows) {
+          update.run(encrypt(row.blob_url), row.id);
+        }
+        console.log(`🔐 Encrypted ${rows.length} blob URL(s).`);
+      },
+    },
   ];
 
   // Run pending migrations in a transaction

@@ -66,7 +66,7 @@ function insertStash(id = TEST_STASH.id) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
-    TEST_STASH.blobUrl,
+    encrypt(TEST_STASH.blobUrl),
     encrypt(TEST_STASH.secretKey),
     TEST_STASH.sellerPubkey,
     TEST_STASH.priceSats,

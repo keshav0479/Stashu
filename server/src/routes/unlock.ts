@@ -5,10 +5,19 @@ import { verifyAndSwapToken } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import { rateLimit } from '../middleware/ratelimit.js';
-import type { UnlockRequest, UnlockResponse, APIResponse } from '../../../shared/types.js';
+import type {
+  StashProofSecret,
+  UnlockRequest,
+  UnlockResponse,
+  APIResponse,
+} from '../../../shared/types.js';
 import type { StashRow, PaymentRow } from '../db/types.js';
 
 export const unlockRoutes = new Hono();
+
+function decryptPreviewSecret(value: string | null): StashProofSecret | undefined {
+  return value ? (JSON.parse(decrypt(value)) as StashProofSecret) : undefined;
+}
 
 // POST /api/unlock/:id - Unlock a stash with Cashu token
 unlockRoutes.post('/:id', async (c) => {
@@ -28,7 +37,7 @@ unlockRoutes.post('/:id', async (c) => {
 
     // Get stash details
     const stashStmt = db.prepare(`
-      SELECT id, blob_url, blob_sha256, secret_key, file_name, price_sats, seller_pubkey
+      SELECT id, blob_url, blob_sha256, secret_key, preview_secret, file_name, price_sats, seller_pubkey
       FROM stashes WHERE id = ?
     `);
     const stash = stashStmt.get(stashId) as Pick<
@@ -37,6 +46,7 @@ unlockRoutes.post('/:id', async (c) => {
       | 'blob_url'
       | 'blob_sha256'
       | 'secret_key'
+      | 'preview_secret'
       | 'file_name'
       | 'price_sats'
       | 'seller_pubkey'
@@ -84,9 +94,10 @@ unlockRoutes.post('/:id', async (c) => {
           success: true,
           data: {
             secretKey: decrypt(stash.secret_key),
-            blobUrl: stash.blob_url,
+            blobUrl: decrypt(stash.blob_url),
             blobSha256: stash.blob_sha256 ?? undefined,
             fileName: decrypt(stash.file_name),
+            previewSecret: decryptPreviewSecret(stash.preview_secret),
             claimToken,
           },
         });
@@ -162,9 +173,10 @@ unlockRoutes.post('/:id', async (c) => {
       success: true,
       data: {
         secretKey: decrypt(stash.secret_key),
-        blobUrl: stash.blob_url,
+        blobUrl: decrypt(stash.blob_url),
         blobSha256: stash.blob_sha256 ?? undefined,
         fileName: decrypt(stash.file_name),
+        previewSecret: decryptPreviewSecret(stash.preview_secret),
         claimToken,
       },
     });
@@ -207,8 +219,13 @@ unlockRoutes.get('/:id/claim', rateLimit(60_000, 10, '/api/unlock/claim'), async
   }
 
   const stash = db
-    .prepare('SELECT secret_key, blob_url, blob_sha256, file_name FROM stashes WHERE id = ?')
-    .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'blob_sha256' | 'file_name'> | null;
+    .prepare(
+      'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name FROM stashes WHERE id = ?'
+    )
+    .get(stashId) as Pick<
+    StashRow,
+    'secret_key' | 'blob_url' | 'blob_sha256' | 'preview_secret' | 'file_name'
+  > | null;
 
   if (!stash) {
     return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
@@ -218,9 +235,10 @@ unlockRoutes.get('/:id/claim', rateLimit(60_000, 10, '/api/unlock/claim'), async
     success: true,
     data: {
       secretKey: decrypt(stash.secret_key),
-      blobUrl: stash.blob_url,
+      blobUrl: decrypt(stash.blob_url),
       blobSha256: stash.blob_sha256 ?? undefined,
       fileName: decrypt(stash.file_name),
+      previewSecret: decryptPreviewSecret(stash.preview_secret),
     },
   });
 });

@@ -9,10 +9,7 @@ function NotFoundPage() {
         <p className="text-(--color-text-secondary) mb-8 leading-relaxed">
           This page doesn't exist. Maybe the stash was removed, or you followed a broken link.
         </p>
-        <Link
-          to="/"
-          className="btn-primary inline-block px-8 py-3 text-sm font-semibold tracking-wide"
-        >
+        <Link to="/" className="btn-primary px-8 py-3 text-sm">
           Go Home
         </Link>
       </div>

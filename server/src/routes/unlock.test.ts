@@ -34,14 +34,19 @@ const TEST_STASH = {
   priceSats: 100,
 };
 
-function insertStash(id = TEST_STASH.id) {
+const PREVIEW_SECRET = { contentSalt: 'd'.repeat(64) };
+
+function insertStash(id = TEST_STASH.id, previewSecret?: typeof PREVIEW_SECRET) {
   db.prepare(
-    `INSERT INTO stashes (id, blob_url, secret_key, seller_pubkey, price_sats, title, file_name, file_size)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO stashes (
+       id, blob_url, secret_key, preview_secret, seller_pubkey, price_sats, title, file_name, file_size
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
-    TEST_STASH.blobUrl,
+    encrypt(TEST_STASH.blobUrl),
     encrypt(TEST_STASH.secretKey),
+    previewSecret ? encrypt(JSON.stringify(previewSecret)) : null,
     'seller-pubkey',
     TEST_STASH.priceSats,
     encrypt('Test Stash'),
@@ -108,6 +113,20 @@ describe('POST /api/unlock/:id', () => {
     assert.equal(data.claimToken.length, 64, 'claimToken should be 64 hex chars');
   });
 
+  it('returns preview secret after an already-paid unlock', async () => {
+    insertStash(TEST_STASH.id, PREVIEW_SECRET);
+    insertPayment(TEST_STASH.id, 'cashuPaidToken', 'paid', 'cashuSellerToken');
+
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'cashuPaidToken' }),
+    });
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+    assert.deepEqual(data.previewSecret, PREVIEW_SECRET);
+  });
+
   it('returns 409 for pending payment', async () => {
     insertStash();
     insertPayment(TEST_STASH.id, 'cashuPendingToken', 'pending');
@@ -151,7 +170,7 @@ describe('GET /api/unlock/:id/claim', () => {
   }
 
   it('returns unlock data for valid claim token', async () => {
-    insertStash();
+    insertStash(TEST_STASH.id, PREVIEW_SECRET);
     const claimToken = 'a'.repeat(64);
     const expiresAt = Math.floor(Date.now() / 1000) + 3600;
     insertPaidPaymentWithClaim(TEST_STASH.id, claimToken, expiresAt);
@@ -162,6 +181,7 @@ describe('GET /api/unlock/:id/claim', () => {
     assert.equal(data.secretKey, TEST_STASH.secretKey);
     assert.equal(data.blobUrl, TEST_STASH.blobUrl);
     assert.equal(data.fileName, TEST_STASH.fileName);
+    assert.deepEqual(data.previewSecret, PREVIEW_SECRET);
   });
 
   it('returns 400 when token query param is missing', async () => {

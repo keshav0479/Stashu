@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { Check, Info, X } from 'lucide-react';
 import { ToastContext } from './useToast';
 
 interface Toast {
@@ -35,58 +36,41 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 function ToastItem({ toast }: { toast: Toast }) {
-  const bgColors = {
-    success: 'bg-emerald-600',
-    error: 'bg-rose-600',
-    info: 'bg-slate-700',
+  const styles = {
+    success: {
+      shell:
+        'border-emerald-400/25 bg-emerald-500/10 text-emerald-50 shadow-[0_18px_60px_rgba(16,185,129,0.16)]',
+      icon: 'border-emerald-300/25 bg-emerald-400/10 text-emerald-300',
+      Icon: Check,
+    },
+    error: {
+      shell:
+        'border-rose-400/25 bg-rose-500/10 text-rose-50 shadow-[0_18px_60px_rgba(244,63,94,0.16)]',
+      icon: 'border-rose-300/25 bg-rose-400/10 text-rose-300',
+      Icon: X,
+    },
+    info: {
+      shell:
+        'border-slate-500/30 bg-slate-800/80 text-slate-100 shadow-[0_18px_60px_rgba(15,23,42,0.32)]',
+      icon: 'border-slate-400/20 bg-slate-400/10 text-slate-300',
+      Icon: Info,
+    },
   };
-
-  const icons = {
-    success: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.5}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-      </svg>
-    ),
-    error: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.5}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    ),
-    info: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.5}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-      </svg>
-    ),
-  };
+  const { Icon } = styles[toast.type];
 
   return (
-    <div className="fixed top-6 right-6 z-50 pointer-events-none">
+    <div className="fixed top-5 right-4 left-4 sm:left-auto sm:right-5 z-50 pointer-events-none">
       <div
-        className={`${bgColors[toast.type]} ${toast.exiting ? 'toast-exit' : 'toast-enter'}
-                    text-white px-5 py-3.5 rounded-2xl shadow-2xl
-                    flex items-center gap-3 min-w-70 max-w-sm
-                    pointer-events-auto border border-white/10`}
+        className={`${styles[toast.type].shell} ${toast.exiting ? 'toast-exit' : 'toast-enter'}
+                    pointer-events-auto ml-auto flex w-full max-w-sm items-center gap-3
+                    rounded-xl border px-4 py-3 backdrop-blur-xl`}
       >
-        <span className="text-white/90">{icons[toast.type]}</span>
-        <p className="flex-1 text-sm font-semibold tracking-wide">{toast.message}</p>
+        <span
+          className={`${styles[toast.type].icon} flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border`}
+        >
+          <Icon className="h-4 w-4" strokeWidth={2.5} />
+        </span>
+        <p className="flex-1 text-sm font-semibold leading-snug">{toast.message}</p>
       </div>
     </div>
   );

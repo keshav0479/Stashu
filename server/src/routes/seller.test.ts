@@ -36,11 +36,38 @@ function auth(method: string, path: string) {
   return makeNip98Header(method, `http://localhost${path}`, sk);
 }
 
-function insertStash(opts: { showInStorefront?: number; sellerPubkey?: string } = {}) {
+const PREVIEW_BUNDLE = {
+  generatedPreview: {
+    version: 'stashu-generated-preview-v1',
+    kind: 'file-summary',
+    fileName: 'file.pdf',
+    fileType: 'application/pdf',
+    fileSize: 1024,
+    contentType: 'application/octet-stream',
+    options: {},
+    metadata: { reason: 'unsupported-type' },
+    bytes: '',
+  },
+  previewProof: {
+    version: 'stashu-preview-v1',
+    root: 'a'.repeat(64),
+    previewHash: 'b'.repeat(64),
+    contentMerkleRoot: 'c'.repeat(64),
+    contentLength: 1024,
+    chunkSize: 65_536,
+  },
+};
+
+function insertStash(
+  opts: { showInStorefront?: number; sellerPubkey?: string; withPreviewProof?: boolean } = {}
+) {
   const id = crypto.randomUUID();
   db.prepare(
-    `INSERT INTO stashes (id, blob_url, secret_key, seller_pubkey, price_sats, title, file_name, file_size, show_in_storefront, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`
+    `INSERT INTO stashes (
+       id, blob_url, secret_key, seller_pubkey, price_sats, title, file_name,
+       file_size, generated_preview_payload, preview_proof, show_in_storefront, created_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`
   ).run(
     id,
     'https://blossom.example.com/abc',
@@ -50,6 +77,8 @@ function insertStash(opts: { showInStorefront?: number; sellerPubkey?: string } 
     encrypt('Test Stash'),
     encrypt('file.pdf'),
     1024,
+    opts.withPreviewProof ? encrypt(JSON.stringify(PREVIEW_BUNDLE.generatedPreview)) : null,
+    opts.withPreviewProof ? encrypt(JSON.stringify(PREVIEW_BUNDLE.previewProof)) : null,
     opts.showInStorefront ?? 0
   );
   return id;
@@ -132,6 +161,18 @@ describe('GET /api/seller/:pubkey', () => {
     assert.equal(body.data[0].priceSats, 100);
   });
 
+  it('returns generated preview proof fields for visible stashes', async () => {
+    insertStash({ showInStorefront: 1, withPreviewProof: true });
+    enableStorefront(pk);
+
+    const res = await app.request(`/api/seller/${pk}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.data[0].generatedPreview, PREVIEW_BUNDLE.generatedPreview);
+    assert.deepEqual(body.data[0].previewProof, PREVIEW_BUNDLE.previewProof);
+    assert.equal(body.data[0].previewSecret, undefined);
+  });
+
   it('does not return stashes from other sellers', async () => {
     insertStash({ showInStorefront: 1, sellerPubkey: otherPk });
     insertStash({ showInStorefront: 1 });
@@ -203,7 +244,30 @@ describe('POST /api/stash/:id/visibility', () => {
     assert.equal(res.status, 403);
   });
 
+  it('rejects visibility on while storefront is disabled', async () => {
+    const id = insertStash({ showInStorefront: 0 });
+    const path = `/api/stash/${id}/visibility`;
+    const res = await app.request(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: auth('POST', path),
+      },
+      body: JSON.stringify({ showInStorefront: true }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.match(body.error, /storefront/i);
+
+    const row = db.prepare('SELECT show_in_storefront FROM stashes WHERE id = ?').get(id) as {
+      show_in_storefront: number;
+    };
+    assert.equal(row.show_in_storefront, 0);
+  });
+
   it('toggles visibility on', async () => {
+    enableStorefront(pk);
     const id = insertStash({ showInStorefront: 0 });
     const path = `/api/stash/${id}/visibility`;
     const res = await app.request(path, {

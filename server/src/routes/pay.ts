@@ -8,7 +8,12 @@ import {
   verifyAndSwapToken,
 } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
-import type { PayInvoiceResponse, PayStatusResponse, APIResponse } from '../../../shared/types.js';
+import type {
+  PayInvoiceResponse,
+  PayStatusResponse,
+  StashProofSecret,
+  APIResponse,
+} from '../../../shared/types.js';
 import type { StashRow, PaymentRow } from '../db/types.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 
@@ -28,6 +33,10 @@ function ensureClaimToken(
     paymentId
   );
   return claimToken;
+}
+
+function decryptPreviewSecret(value: string | null): StashProofSecret | undefined {
+  return value ? (JSON.parse(decrypt(value)) as StashProofSecret) : undefined;
 }
 
 export const payRoutes = new Hono();
@@ -98,8 +107,13 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     // Already processed — return the unlock data
     if (existingPayment.status === 'paid') {
       const stash = db
-        .prepare('SELECT secret_key, blob_url, blob_sha256, file_name FROM stashes WHERE id = ?')
-        .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'blob_sha256' | 'file_name'>;
+        .prepare(
+          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name FROM stashes WHERE id = ?'
+        )
+        .get(stashId) as Pick<
+        StashRow,
+        'secret_key' | 'blob_url' | 'blob_sha256' | 'preview_secret' | 'file_name'
+      >;
 
       const claimToken = ensureClaimToken(existingPayment, paymentId);
 
@@ -108,9 +122,10 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         data: {
           paid: true,
           secretKey: decrypt(stash.secret_key),
-          blobUrl: stash.blob_url,
+          blobUrl: decrypt(stash.blob_url),
           blobSha256: stash.blob_sha256 ?? undefined,
           fileName: decrypt(stash.file_name),
+          previewSecret: decryptPreviewSecret(stash.preview_secret),
           claimToken,
         },
       });
@@ -140,8 +155,13 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
       if (current?.status === 'paid') {
         const stash = db
-          .prepare('SELECT secret_key, blob_url, blob_sha256, file_name FROM stashes WHERE id = ?')
-          .get(stashId) as Pick<StashRow, 'secret_key' | 'blob_url' | 'blob_sha256' | 'file_name'>;
+          .prepare(
+            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name FROM stashes WHERE id = ?'
+          )
+          .get(stashId) as Pick<
+          StashRow,
+          'secret_key' | 'blob_url' | 'blob_sha256' | 'preview_secret' | 'file_name'
+        >;
 
         const paidRow = db
           .prepare('SELECT claim_token, claim_expires_at FROM payments WHERE id = ?')
@@ -156,9 +176,10 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           data: {
             paid: true,
             secretKey: decrypt(stash.secret_key),
-            blobUrl: stash.blob_url,
+            blobUrl: decrypt(stash.blob_url),
             blobSha256: stash.blob_sha256 ?? undefined,
             fileName: decrypt(stash.file_name),
+            previewSecret: decryptPreviewSecret(stash.preview_secret),
             claimToken,
           },
         });
@@ -183,7 +204,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     const stash = db
       .prepare(
-        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, file_name, seller_pubkey FROM stashes WHERE id = ?'
+        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey FROM stashes WHERE id = ?'
       )
       .get(stashId) as Pick<
       StashRow,
@@ -192,6 +213,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       | 'secret_key'
       | 'blob_url'
       | 'blob_sha256'
+      | 'preview_secret'
       | 'file_name'
       | 'seller_pubkey'
     > | null;
@@ -241,9 +263,10 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         data: {
           paid: true,
           secretKey: decrypt(stash.secret_key),
-          blobUrl: stash.blob_url,
+          blobUrl: decrypt(stash.blob_url),
           blobSha256: stash.blob_sha256 ?? undefined,
           fileName: decrypt(stash.file_name),
+          previewSecret: decryptPreviewSecret(stash.preview_secret),
           claimToken,
         },
       });
