@@ -1,10 +1,19 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
-import type { StashPublicInfo, APIResponse } from '../../../shared/types.js';
+import type {
+  GeneratedPreviewPayload,
+  StashProof,
+  StashPublicInfo,
+  APIResponse,
+} from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
 export const sellerRoutes = new Hono();
+
+function parseStoredJson<T>(value: string | null): T | undefined {
+  return value ? (JSON.parse(decrypt(value)) as T) : undefined;
+}
 
 // GET /api/seller/:pubkey - Get all stashes by a seller (public, no auth)
 sellerRoutes.get('/:pubkey', async (c) => {
@@ -46,7 +55,8 @@ sellerRoutes.get('/:pubkey', async (c) => {
     }
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, preview_url, created_at
+      SELECT id, title, description, file_name, file_size, price_sats, preview_url,
+             generated_preview_payload, preview_proof, created_at
       FROM stashes
       WHERE seller_pubkey = ? AND show_in_storefront = 1
       ORDER BY created_at DESC
@@ -61,6 +71,8 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'file_size'
       | 'price_sats'
       | 'preview_url'
+      | 'generated_preview_payload'
+      | 'preview_proof'
       | 'created_at'
     >[];
 
@@ -72,6 +84,8 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileSize: row.file_size,
       priceSats: row.price_sats,
       previewUrl: row.preview_url ?? undefined,
+      generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),
+      previewProof: parseStoredJson<StashProof>(row.preview_proof),
     }));
 
     return c.json<APIResponse<StashPublicInfo[]>>({

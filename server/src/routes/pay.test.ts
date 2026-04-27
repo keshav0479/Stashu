@@ -26,15 +26,19 @@ const app = new Hono();
 app.route('/api/pay', payRoutes);
 
 const TEST_STASH_ID = 'stash-pay-001';
+const PREVIEW_SECRET = { contentSalt: 'd'.repeat(64) };
 
-function insertStash(id = TEST_STASH_ID) {
+function insertStash(id = TEST_STASH_ID, previewSecret?: typeof PREVIEW_SECRET) {
   db.prepare(
-    `INSERT INTO stashes (id, blob_url, secret_key, seller_pubkey, price_sats, title, file_name, file_size)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO stashes (
+       id, blob_url, secret_key, preview_secret, seller_pubkey, price_sats, title, file_name, file_size
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
-    'https://blossom.example.com/blob',
+    encrypt('https://blossom.example.com/blob'),
     encrypt('pay-secret-key'),
+    previewSecret ? encrypt(JSON.stringify(previewSecret)) : null,
     'seller-pubkey',
     100,
     encrypt('Test'),
@@ -78,7 +82,7 @@ describe('GET /api/pay/:id/status/:quoteId', () => {
   });
 
   it('returns unlock data with claimToken when already paid', async () => {
-    insertStash();
+    insertStash(TEST_STASH_ID, PREVIEW_SECRET);
     db.prepare(
       `INSERT INTO payments (id, stash_id, status, token_hash, seller_token, paid_at)
        VALUES (?, ?, 'paid', ?, ?, ?)`
@@ -97,6 +101,7 @@ describe('GET /api/pay/:id/status/:quoteId', () => {
     assert.equal(data.secretKey, 'pay-secret-key');
     assert.equal(data.blobUrl, 'https://blossom.example.com/blob');
     assert.equal(data.fileName, 'file.pdf');
+    assert.deepEqual(data.previewSecret, PREVIEW_SECRET);
     assert.ok(data.claimToken, 'should return a claimToken');
     assert.equal(data.claimToken.length, 64, 'claimToken should be 64 hex chars');
   });
