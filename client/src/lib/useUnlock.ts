@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react';
 import { getStashInfo, unlockStash, claimStash } from './api';
 import { decryptFile, fromBase64 } from './crypto';
 import { fetchFromBlossomWithFallback } from './blossom';
-import type { StashPublicInfo } from '../../../shared/types';
+import { verifyUnlockedStashFile } from './verifiedPreview';
+import type { StashProofSecret, StashPublicInfo } from '../../../shared/types';
 
 export type UnlockStatus =
   | 'loading'
@@ -19,6 +20,7 @@ export interface UnlockState {
   error: string | null;
   downloadUrl: string | null;
   fileName: string | null;
+  blobSha256: string | null;
 }
 
 export function useUnlock(stashId: string) {
@@ -28,6 +30,7 @@ export function useUnlock(stashId: string) {
     error: null,
     downloadUrl: null,
     fileName: null,
+    blobSha256: null,
   });
 
   const decryptAndFinish = useCallback(
@@ -36,6 +39,7 @@ export function useUnlock(stashId: string) {
       blobUrl: string;
       blobSha256?: string;
       fileName?: string;
+      previewSecret?: StashProofSecret;
     }) => {
       setState((s) => ({ ...s, status: 'decrypting', error: null }));
 
@@ -49,19 +53,38 @@ export function useUnlock(stashId: string) {
       const key = fromBase64(keyB64);
 
       const plaintext = await decryptFile(ciphertext, key, nonce);
+      if (
+        state.stash?.previewProof &&
+        !verifyUnlockedStashFile(state.stash, plaintext, data.previewSecret)
+      ) {
+        throw new Error('Unlocked file did not match its preview proof');
+      }
 
       const blob = new Blob([plaintext]);
       const downloadUrl = URL.createObjectURL(blob);
       const fileName = data.fileName || state.stash?.title || 'download';
 
-      setState((s) => ({ ...s, status: 'done', downloadUrl, fileName }));
+      setState((s) => ({
+        ...s,
+        status: 'done',
+        downloadUrl,
+        fileName,
+        blobSha256: data.blobSha256 ?? null,
+      }));
     },
     [state.stash]
   );
 
   const loadStash = useCallback(async () => {
     try {
-      setState((s) => ({ ...s, status: 'loading', error: null }));
+      setState((s) => ({
+        ...s,
+        status: 'loading',
+        error: null,
+        downloadUrl: null,
+        fileName: null,
+        blobSha256: null,
+      }));
       const stash = await getStashInfo(stashId);
       // If a claim token exists, go straight to 'claiming' to avoid flashing payment UI
       const hasClaimToken = !!localStorage.getItem(`stashu-claim-${stashId}`);
@@ -91,7 +114,11 @@ export function useUnlock(stashId: string) {
         localStorage.removeItem(`stashu-claim-${stashId}`);
       }
       // For transient errors (network, 500), keep the token for next attempt
-      setState((s) => ({ ...s, status: 'ready' }));
+      setState((s) => ({
+        ...s,
+        status: 'ready',
+        error: error instanceof Error ? error.message : 'Could not restore previous payment',
+      }));
       return false;
     }
   }, [stashId, decryptAndFinish]);
@@ -146,6 +173,7 @@ export function useUnlock(stashId: string) {
       blobSha256?: string;
       fileName?: string;
       claimToken?: string;
+      previewSecret?: StashProofSecret;
     }) => {
       try {
         // Store claim token for re-download
@@ -175,6 +203,7 @@ export function useUnlock(stashId: string) {
       error: null,
       downloadUrl: null,
       fileName: null,
+      blobSha256: null,
     });
   }, [state.downloadUrl]);
 
