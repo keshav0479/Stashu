@@ -596,8 +596,7 @@ export function SellPage() {
                   toast.showToast('Failed to copy link', 'error');
                 }
               }}
-              className="py-3 px-6 bg-orange-500 hover:bg-orange-600 
-                       text-white font-semibold rounded-xl transition-colors"
+              className="btn-primary px-6 py-3"
             >
               Copy Link
             </button>
@@ -962,9 +961,7 @@ export function SellPage() {
         <button
           onClick={handleSubmit}
           disabled={!selectedFile || !title || !price || stash.status !== 'idle'}
-          className="w-full py-4 px-6 bg-orange-500 hover:bg-orange-600 
-                   text-white font-bold text-lg rounded-xl transition-colors
-                   disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full px-6 py-4 text-lg"
         >
           {stash.status === 'idle' ? (
             <>

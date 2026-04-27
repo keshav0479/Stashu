@@ -58,10 +58,7 @@ function App() {
             <p className="text-(--color-text-secondary) text-sm mb-6">
               Upload, set price, get shareable link.
             </p>
-            <Link
-              to="/sell"
-              className="btn-primary w-full shadow-lg shadow-orange-500/20 block text-center py-3 text-sm font-semibold tracking-wide hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all duration-200"
-            >
+            <Link to="/sell" className="btn-primary w-full py-3 text-sm">
               {userHasIdentity ? 'Create Stash' : 'Get Started'}
             </Link>
           </div>

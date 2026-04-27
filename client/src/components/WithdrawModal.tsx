@@ -206,11 +206,7 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
             <button
               onClick={handleGetQuote}
               disabled={!invoice.trim() || resolving}
-              className={`w-full py-3 rounded-xl font-semibold transition-all ${
-                !invoice.trim() || resolving
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-amber-500 hover:bg-amber-600 text-white'
-              }`}
+              className="btn-primary w-full py-3"
             >
               {resolving ? (
                 <span className="flex items-center justify-center gap-2">
@@ -270,10 +266,7 @@ export function WithdrawModal({ totalSats, onClose, onSuccess }: WithdrawModalPr
               >
                 Back
               </button>
-              <button
-                onClick={handleWithdraw}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
-              >
+              <button onClick={handleWithdraw} className="btn-primary flex-1 py-3">
                 <Zap className="w-4 h-4" />
                 Withdraw
               </button>

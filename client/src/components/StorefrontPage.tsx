@@ -107,10 +107,7 @@ export function StorefrontPage() {
           <p className="text-slate-400 mb-8">
             This seller doesn't exist on Stashu or the link is invalid.
           </p>
-          <Link
-            to="/"
-            className="inline-block py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <Link to="/" className="btn-primary px-6 py-3">
             Go Home
           </Link>
         </div>
@@ -128,10 +125,7 @@ export function StorefrontPage() {
           </div>
           <h1 className="text-2xl font-bold text-white mb-4">Storefront Not Available</h1>
           <p className="text-slate-400 mb-8">This seller hasn't enabled their public storefront.</p>
-          <Link
-            to="/"
-            className="inline-block py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <Link to="/" className="btn-primary px-6 py-3">
             Go Home
           </Link>
         </div>
@@ -149,10 +143,7 @@ export function StorefrontPage() {
           </div>
           <h1 className="text-2xl font-bold text-white mb-4">Failed to Load Storefront</h1>
           <p className="text-slate-400 mb-8">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <button onClick={() => window.location.reload()} className="btn-primary px-6 py-3">
             Try Again
           </button>
         </div>

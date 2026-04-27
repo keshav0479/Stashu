@@ -140,20 +140,30 @@ h4,
 
 /* Brand Button */
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-accent-primary) 0%, #ea580c 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(249, 115, 22, 0.94);
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(253, 186, 116, 0.24);
   padding: 14px 28px;
   border-radius: 14px;
   font-weight: 600;
-  letter-spacing: 0.01em;
   font-size: 1rem;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
     opacity 0.2s;
-  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+  box-shadow:
+    0 8px 18px rgba(249, 115, 22, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
   position: relative;
   overflow: hidden;
   transform: translateZ(0);
@@ -166,18 +176,73 @@ h4,
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(rgba(255, 255, 255, 0.14), transparent);
   opacity: 0;
   transition: opacity 0.2s;
+  pointer-events: none;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
+  background: rgb(249, 115, 22);
   transform: translateY(-1px) translateZ(0);
-  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
+  border-color: rgba(253, 186, 116, 0.36);
+  box-shadow:
+    0 10px 22px rgba(249, 115, 22, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btn-primary:hover:not(:disabled)::after {
+  opacity: 1;
 }
 
 .btn-primary:active {
   transform: translateY(0) translateZ(0);
+}
+
+.btn-primary:disabled,
+.btn-primary[aria-disabled='true'] {
+  background: rgba(15, 23, 42, 0.45);
+  border-color: rgba(100, 116, 139, 0.42);
+  color: rgba(148, 163, 184, 0.78);
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 1;
+  transform: translateZ(0);
+}
+
+.btn-success {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(16, 185, 129, 0.9);
+  color: white;
+  border: 1px solid rgba(110, 231, 183, 0.24);
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+  box-shadow:
+    0 8px 18px rgba(16, 185, 129, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateZ(0);
+}
+
+.btn-success:hover:not(:disabled) {
+  background: rgb(16, 185, 129);
+  border-color: rgba(110, 231, 183, 0.36);
+  transform: translateY(-1px) translateZ(0);
+  box-shadow:
+    0 10px 22px rgba(16, 185, 129, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 /* Secondary Button */

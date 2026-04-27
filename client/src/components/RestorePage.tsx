@@ -68,11 +68,7 @@ export function RestorePage() {
           <button
             onClick={handleRestore}
             disabled={loading || !nsec.trim()}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              loading || !nsec.trim()
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                : 'bg-linear-to-r from-amber-500 to-orange-500 text-white hover:from-amber-400 hover:to-orange-400 shadow-lg shadow-amber-500/25'
-            }`}
+            className="btn-primary w-full py-4 text-lg"
           >
             {loading ? 'Restoring...' : 'Restore Account'}
           </button>

@@ -10,6 +10,7 @@ import {
   History,
   Link as LinkIcon,
   Store,
+  Plus,
 } from 'lucide-react';
 import { getDashboard, getSettlements, toggleStashVisibility } from '../lib/api';
 import { getPublicKeyHex, getOrCreateIdentity, hasIdentity } from '../lib/identity';
@@ -127,10 +128,7 @@ export function DashboardPage() {
           <p className="text-slate-400 mb-8">
             Create a stash first to generate your seller identity.
           </p>
-          <Link
-            to="/sell"
-            className="inline-block py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <Link to="/sell" className="btn-primary px-6 py-3">
             Create a Stash
           </Link>
         </div>
@@ -214,10 +212,7 @@ export function DashboardPage() {
           </div>
           <h1 className="text-2xl font-bold text-white mb-4">Error Loading Dashboard</h1>
           <p className="text-slate-400 mb-8">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <button onClick={() => window.location.reload()} className="btn-primary px-6 py-3">
             Try Again
           </button>
         </div>
@@ -260,30 +255,28 @@ export function DashboardPage() {
                     toast.showToast('Failed to copy link', 'error');
                   }
                 }}
-                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700/70 bg-slate-800/60 text-slate-400 transition-all hover:border-slate-500/70 hover:bg-slate-700/70 hover:text-white"
                 title="Copy Storefront Link"
               >
-                <LinkIcon className="w-5 h-5 text-slate-400" />
+                <LinkIcon className="w-5 h-5" />
               </button>
             )}
             <Link
               to="/settings"
-              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700/70 bg-slate-800/60 text-slate-400 transition-all hover:border-slate-500/70 hover:bg-slate-700/70 hover:text-white"
               title="Settings"
             >
-              <Settings className="w-5 h-5 text-slate-400" />
+              <Settings className="w-5 h-5" />
             </Link>
-            <Link
-              to="/sell"
-              className="flex-1 sm:flex-initial text-center py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-            >
-              + New Stash
+            <Link to="/sell" className="btn-primary h-10 flex-1 px-4 py-0 text-sm sm:flex-initial">
+              <Plus className="h-4 w-4" />
+              New Stash
             </Link>
           </div>
         </div>
 
         {/* Earnings Card */}
-        <div className="relative bg-linear-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/30 rounded-2xl p-8 mb-8">
+        <div className="relative mb-8 rounded-2xl border border-orange-500/25 bg-linear-to-br from-orange-500/16 to-amber-500/8 p-6 sm:p-8">
           <div className="flex flex-col gap-8">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-8 sm:gap-0">
               <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-12 w-full sm:w-auto">
@@ -330,7 +323,11 @@ export function DashboardPage() {
                   <button
                     onClick={() => setShowWithdraw(true)}
                     disabled={availableBalance === 0}
-                    className="w-full sm:w-auto py-3 px-6 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    className={`flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-3 font-semibold transition-all sm:w-auto ${
+                      availableBalance === 0
+                        ? 'cursor-not-allowed border-slate-700/70 bg-slate-900/35 text-slate-500'
+                        : 'border-amber-300/20 bg-amber-500/85 text-white hover:bg-amber-500'
+                    }`}
                   >
                     <Zap
                       className={`w-4 h-4 ${availableBalance === 0 ? 'text-slate-500' : 'text-white'}`}
@@ -340,7 +337,7 @@ export function DashboardPage() {
                   {data!.earnings.tokens.length > 0 && (
                     <button
                       onClick={copyAllTokens}
-                      className="w-full sm:w-auto py-3 px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-800/55 px-6 py-3 font-semibold text-slate-300 transition-all hover:border-slate-500/70 hover:bg-slate-700/70 hover:text-white sm:w-auto"
                     >
                       <Copy className="w-4 h-4" />
                       Copy Tokens
@@ -362,10 +359,8 @@ export function DashboardPage() {
                 <Package className="w-6 h-6 text-slate-400" />
               </div>
               <p className="text-slate-400 mb-4">No stashes yet. Create your first one!</p>
-              <Link
-                to="/sell"
-                className="inline-block py-2 px-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-              >
+              <Link to="/sell" className="btn-primary px-4 py-2 text-sm">
+                <Plus className="h-4 w-4" />
                 Create Stash
               </Link>
             </div>

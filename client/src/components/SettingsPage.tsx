@@ -93,10 +93,7 @@ export function SettingsPage() {
           <p className="text-slate-400 mb-8">
             Create a stash first to generate your seller identity.
           </p>
-          <Link
-            to="/sell"
-            className="inline-block py-3 px-6 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-          >
+          <Link to="/sell" className="btn-primary px-6 py-3">
             Create a Stash
           </Link>
         </div>
@@ -340,11 +337,7 @@ export function SettingsPage() {
                   <button
                     onClick={handleSaveSettings}
                     disabled={saving || !settingsChanged}
-                    className={`flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm transition-all ${
-                      saving || !settingsChanged
-                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                        : 'bg-amber-500 hover:bg-amber-600 text-white'
-                    }`}
+                    className="btn-primary px-5 py-2.5 text-sm"
                   >
                     {saving ? (
                       <>
