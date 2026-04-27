@@ -4,6 +4,13 @@ import { uploadToBlossom, getBlossomServer, mirrorToBackupServers } from './blos
 import { getPublicKey } from './nostr';
 import { createStash } from './api';
 import { hasIdentity, hasAcknowledgedRecovery } from './identity';
+import {
+  decodeGeneratedPreviewBytes,
+  generatePreviewFromBytes,
+  serializeGeneratedPreviewPayload,
+  type TextLineLimit,
+} from './generatedPreview';
+import { createStashProof } from './stashProof';
 
 export type StashStatus = 'idle' | 'encrypting' | 'uploading' | 'creating' | 'done' | 'error';
 
@@ -18,6 +25,14 @@ export interface StashOptions {
   title: string;
   description?: string;
   priceSats: number;
+  peekMode?: 'none' | 'auto' | 'excerpt';
+  previewLineLimit?: TextLineLimit;
+  previewMaxChars?: number;
+  previewRatio?: number;
+  peekExcerpt?: {
+    offset: number;
+    text: string;
+  };
 }
 
 export function useStash() {
@@ -38,6 +53,37 @@ export function useStash() {
     try {
       setState((s) => ({ ...s, status: 'encrypting', progress: 20 }));
       const fileData = await readFileAsArrayBuffer(file);
+      const fileBytes = new Uint8Array(fileData);
+      const generatedPreview = generatePreviewFromBytes(
+        {
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          content: fileBytes,
+        },
+        {
+          mode: options.peekMode ?? 'none',
+          lineLimit: options.previewLineLimit,
+          maxChars: options.previewMaxChars,
+          maxPreviewRatio: options.previewRatio,
+          excerpt: options.peekExcerpt,
+        }
+      );
+      const previewContent =
+        generatedPreview.kind === 'text-peek'
+          ? {
+              offset: (generatedPreview.metadata as { offset: number }).offset,
+              bytes: decodeGeneratedPreviewBytes(generatedPreview),
+            }
+          : undefined;
+      const { proof: previewProof, secret: previewSecret } = createStashProof(
+        serializeGeneratedPreviewPayload(generatedPreview),
+        fileBytes,
+        {
+          previewContent:
+            previewContent && previewContent.bytes.length > 0 ? previewContent : undefined,
+        }
+      );
       const { ciphertext, nonce, key } = await encryptFile(fileData);
       const secretKey = `${toBase64(nonce)}:${toBase64(key)}`;
 
@@ -59,6 +105,9 @@ export function useStash() {
         description: options.description,
         fileName: file.name,
         fileSize: file.size,
+        generatedPreview,
+        previewProof,
+        previewSecret,
       });
 
       const shareUrl = `${window.location.origin}/s/${stashResult.id}`;
