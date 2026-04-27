@@ -17,9 +17,20 @@ import { recoverPendingMelts, recoverMintFailures } from './lib/recovery.js';
 
 const app = new Hono();
 
-const corsOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:5174'];
+const configuredCorsOrigins =
+  process.env.CORS_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean) ?? [];
+const localDevOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+];
+const corsOrigins =
+  process.env.NODE_ENV === 'production' && configuredCorsOrigins.length > 0
+    ? configuredCorsOrigins
+    : [...new Set([...configuredCorsOrigins, ...localDevOrigins])];
 
 // Security headers
 app.use('*', async (c, next) => {

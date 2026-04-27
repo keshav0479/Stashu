@@ -30,6 +30,9 @@
   /* Effects */
   --shadow-glow: 0 0 50px rgba(249, 115, 22, 0.15);
   --glass-blur: 20px;
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 160ms;
+  --motion-medium: 240ms;
 }
 
 body {
@@ -75,6 +78,39 @@ h4,
 .font-display {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(a, button, input, textarea, select, [role='button']) {
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--ease-soft);
+  }
+
+  :where(a, button, [role='button']) {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  }
+
+  :where(input, textarea, select) {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+  }
+
+  .soft-surface {
+    transition:
+      color var(--motion-fast) var(--ease-soft),
+      background-color var(--motion-fast) var(--ease-soft),
+      border-color var(--motion-fast) var(--ease-soft),
+      box-shadow var(--motion-fast) var(--ease-soft),
+      opacity var(--motion-fast) var(--ease-soft),
+      transform var(--motion-fast) var(--ease-soft);
+  }
+
+  .soft-appear {
+    animation: softAppear var(--motion-medium) var(--ease-soft) both;
+  }
+
+  .route-appear {
+    animation: routeAppear var(--motion-medium) var(--ease-soft) both;
+  }
 }
 
 /* Glass Cards */
@@ -333,4 +369,33 @@ body.modal-open {
 
 .animate-scale-in {
   animation: scaleIn 0.5s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
+}
+
+@keyframes softAppear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes routeAppear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }
