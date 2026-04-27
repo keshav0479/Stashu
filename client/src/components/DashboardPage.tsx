@@ -416,20 +416,29 @@ export function DashboardPage() {
                             toast.showToast('Failed to update visibility', 'error');
                           }
                         }}
+                        disabled={!data!.storefrontEnabled}
                         className={`p-2 rounded-lg transition-colors ${
-                          stash.showInStorefront
-                            ? 'bg-violet-500/20 hover:bg-violet-500/30'
-                            : 'bg-slate-700 hover:bg-slate-600'
+                          !data!.storefrontEnabled
+                            ? 'bg-slate-800 cursor-not-allowed opacity-50'
+                            : stash.showInStorefront
+                              ? 'bg-violet-500/20 hover:bg-violet-500/30'
+                              : 'bg-slate-700 hover:bg-slate-600'
                         }`}
                         title={
-                          stash.showInStorefront
-                            ? 'Visible in storefront — click to hide'
-                            : 'Hidden from storefront — click to show'
+                          !data!.storefrontEnabled
+                            ? 'Enable your public storefront in Settings first'
+                            : stash.showInStorefront
+                              ? 'Visible in storefront — click to hide'
+                              : 'Hidden from storefront — click to show'
                         }
                       >
                         <Store
                           className={`w-5 h-5 ${
-                            stash.showInStorefront ? 'text-violet-400' : 'text-slate-500'
+                            !data!.storefrontEnabled
+                              ? 'text-slate-600'
+                              : stash.showInStorefront
+                                ? 'text-violet-400'
+                                : 'text-slate-500'
                           }`}
                         />
                       </button>
