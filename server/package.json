@@ -14,7 +14,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "better-sqlite3": "^11.0.0",
-    "hono": "^4.12.14",
+    "hono": "^4.12.15",
     "nostr-tools": "^2.23.3",
     "uuid": "^11.0.0"
   },
