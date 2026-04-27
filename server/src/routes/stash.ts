@@ -459,6 +459,19 @@ stashRoutes.post('/:id/visibility', async (c) => {
       return c.json<APIResponse<never>>({ success: false, error: 'Not your stash' }, 403);
     }
 
+    if (body.showInStorefront) {
+      const settings = db
+        .prepare('SELECT storefront_enabled FROM seller_settings WHERE pubkey = ?')
+        .get(pubkey) as { storefront_enabled: number } | undefined;
+
+      if (settings?.storefront_enabled !== 1) {
+        return c.json<APIResponse<never>>(
+          { success: false, error: 'Enable your storefront before showing stashes publicly' },
+          409
+        );
+      }
+    }
+
     const newValue = body.showInStorefront ? 1 : 0;
     db.prepare('UPDATE stashes SET show_in_storefront = ? WHERE id = ?').run(newValue, id);
 

@@ -244,7 +244,30 @@ describe('POST /api/stash/:id/visibility', () => {
     assert.equal(res.status, 403);
   });
 
+  it('rejects visibility on while storefront is disabled', async () => {
+    const id = insertStash({ showInStorefront: 0 });
+    const path = `/api/stash/${id}/visibility`;
+    const res = await app.request(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: auth('POST', path),
+      },
+      body: JSON.stringify({ showInStorefront: true }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.match(body.error, /storefront/i);
+
+    const row = db.prepare('SELECT show_in_storefront FROM stashes WHERE id = ?').get(id) as {
+      show_in_storefront: number;
+    };
+    assert.equal(row.show_in_storefront, 0);
+  });
+
   it('toggles visibility on', async () => {
+    enableStorefront(pk);
     const id = insertStash({ showInStorefront: 0 });
     const path = `/api/stash/${id}/visibility`;
     const res = await app.request(path, {
