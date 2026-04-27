@@ -9,6 +9,69 @@ export type APIResponse<T> = { success: true; data: T } | { success: false; erro
 // Stash Types
 // ============================================
 
+export type GeneratedPreviewKind = 'text-peek' | 'file-summary';
+
+export interface TextPreviewOptions {
+  mode: 'auto' | 'excerpt';
+  lineLimit: 4 | 10 | 20 | 50;
+  maxBytes: number;
+  maxChars: number;
+  maxPreviewRatio: number;
+}
+
+export type FileSummaryOptions = Record<string, never>;
+
+export interface TextPreviewMetadata {
+  offset: number;
+  lineLimit: 4 | 10 | 20 | 50;
+  linesIncluded: number;
+  bytesRead: number;
+  previewBytes: number;
+  truncated: boolean;
+}
+
+export interface FileSummaryMetadata {
+  reason: 'unsupported-type' | 'decode-failed' | 'preview-disabled' | 'preview-would-reveal-file';
+}
+
+export interface GeneratedPreviewPayload {
+  version: 'stashu-generated-preview-v1';
+  kind: GeneratedPreviewKind;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  contentType: string;
+  options: TextPreviewOptions | FileSummaryOptions;
+  metadata: TextPreviewMetadata | FileSummaryMetadata;
+  bytes: string;
+}
+
+export interface StashProof {
+  version: 'stashu-preview-v1';
+  root: string;
+  previewHash: string;
+  contentMerkleRoot: string;
+  contentLength: number;
+  chunkSize: number;
+  previewInclusion?: PreviewInclusionProof;
+}
+
+export interface MerkleProofStep {
+  side: 'left' | 'right';
+  hash: string;
+}
+
+export interface PreviewInclusionProof {
+  offset: number;
+  length: number;
+  leafHash: string;
+  path: MerkleProofStep[];
+}
+
+export interface StashProofSecret {
+  contentSalt: string;
+}
+
 export interface Stash {
   id: string;
   blobUrl: string;
@@ -21,6 +84,9 @@ export interface Stash {
   fileName: string;
   fileSize: number;
   previewUrl?: string;
+  generatedPreview?: GeneratedPreviewPayload;
+  previewProof?: StashProof;
+  previewSecret?: StashProofSecret;
   createdAt: number;
 }
 
@@ -33,6 +99,8 @@ export interface StashPublicInfo {
   fileSize: number;
   priceSats: number;
   previewUrl?: string;
+  generatedPreview?: GeneratedPreviewPayload;
+  previewProof?: StashProof;
 }
 
 // ============================================
@@ -67,6 +135,9 @@ export interface CreateStashRequest {
   fileName: string;
   fileSize: number;
   previewUrl?: string;
+  generatedPreview?: GeneratedPreviewPayload;
+  previewProof?: StashProof;
+  previewSecret?: StashProofSecret;
 }
 
 export interface CreateStashResponse {
@@ -85,6 +156,7 @@ export interface UnlockResponse {
   blobSha256?: string;
   fileName: string;
   claimToken?: string;
+  previewSecret?: StashProofSecret;
 }
 
 // GET /api/earnings (for seller dashboard)
@@ -151,6 +223,7 @@ export interface PayStatusResponse {
   blobSha256?: string;
   fileName?: string;
   claimToken?: string;
+  previewSecret?: StashProofSecret;
 }
 
 // POST /api/withdraw/resolve-address
