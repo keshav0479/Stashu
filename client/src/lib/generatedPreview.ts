@@ -144,6 +144,10 @@ function isTextLike(fileName: string, fileType: string): boolean {
   );
 }
 
+export function isTextPreviewSupported(fileName: string, fileType?: string): boolean {
+  return isTextLike(fileName, normalizeFileType(fileType));
+}
+
 function normalizeLineLimit(lineLimit?: TextLineLimit): TextLineLimit {
   if (lineLimit === undefined) return DEFAULT_TEXT_LINE_LIMIT;
   if (TEXT_LINE_LIMITS.includes(lineLimit)) return lineLimit;

@@ -280,8 +280,8 @@ export function SettingsPage() {
                     />
                     <p className="text-slate-500 text-xs mt-1.5 flex items-start gap-1">
                       <Lightbulb className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500/60" />
-                      Use an always-online wallet (e.g. Alby, WoS, Coinos) for reliable
-                      auto-settlement. Self-custodial mobile wallets may miss payments when offline.
+                      Use a Lightning address you control. Auto-settlement works best when that
+                      address can receive reliably in the background.
                     </p>
                   </div>
 

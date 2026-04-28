@@ -15,6 +15,7 @@ import {
   MAX_TEXT_PREVIEW_CHARS,
   generatePreviewFromBytes,
   generatePreviewFromFile,
+  isTextPreviewSupported,
   type GeneratedPreviewPayload,
   type TextLineLimit,
 } from '../lib/generatedPreview';
@@ -233,8 +234,7 @@ export function SellPage() {
     return !hasAcknowledgedRecovery();
   });
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
+  const resetPreviewState = () => {
     setGeneratedPreview(null);
     setPreviewError(null);
     setFileText(null);
@@ -245,7 +245,21 @@ export function SellPage() {
     setShowPreviewControls(false);
   };
 
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    resetPreviewState();
+  };
+
+  const handleFileClear = () => {
+    setSelectedFile(null);
+    resetPreviewState();
+  };
+
   const activePreviewPreset = PREVIEW_PRESETS[previewPreset];
+  const textPreviewSupported = useMemo(
+    () => (selectedFile ? isTextPreviewSupported(selectedFile.name, selectedFile.type) : false),
+    [selectedFile]
+  );
 
   useEffect(() => {
     if (!selectedFile) return;
@@ -639,7 +653,11 @@ export function SellPage() {
 
         {/* File Upload */}
         <div className="mb-8">
-          <FileUploader onFileSelect={handleFileSelect} disabled={stash.status !== 'idle'} />
+          <FileUploader
+            onFileSelect={handleFileSelect}
+            onFileClear={handleFileClear}
+            disabled={stash.status !== 'idle'}
+          />
         </div>
 
         {selectedFile && (
@@ -650,243 +668,263 @@ export function SellPage() {
                 <h2 className="text-white font-semibold">Preview for buyers</h2>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                Choose whether buyers can see a verified sample before paying.
+                {textPreviewSupported
+                  ? 'Choose whether buyers can see a verified sample before paying.'
+                  : 'Text previews are not available for this file type yet.'}
               </p>
             </div>
 
-            <div className="mb-4 grid gap-2 sm:grid-cols-3">
-              {[
-                {
-                  label: 'No preview',
-                  body: 'Most private',
-                  value: 'none' as const,
-                },
-                {
-                  label: 'Quick preview',
-                  body: 'Start of file',
-                  value: 'auto' as const,
-                },
-                {
-                  label: 'Choose text',
-                  body: 'You pick it',
-                  value: 'excerpt' as const,
-                },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    if (option.value === peekMode) return;
+            {!textPreviewSupported ? (
+              <div className="soft-appear flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                <FileText className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
+                <div>
+                  <p className="text-sm text-slate-300">No public preview will be shown.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Stashu will verify the unlocked file after payment.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 grid gap-2 sm:grid-cols-3">
+                  {[
+                    {
+                      label: 'No preview',
+                      body: 'Most private',
+                      value: 'none' as const,
+                    },
+                    {
+                      label: 'Quick preview',
+                      body: 'Start of file',
+                      value: 'auto' as const,
+                    },
+                    {
+                      label: 'Choose text',
+                      body: 'You pick it',
+                      value: 'excerpt' as const,
+                    },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        if (option.value === peekMode) return;
 
-                    setPeekMode(option.value);
-                    setGeneratedPreview(null);
-                    setPreviewError(null);
-                    if (option.value !== 'excerpt') {
-                      setFileText(null);
-                      setQuickExcerptPosition(null);
-                      setSelectedExcerpt(null);
-                    }
-                  }}
-                  className={`rounded-xl border px-3 py-3 text-left transition-colors ${
-                    peekMode === option.value
-                      ? 'border-orange-500 bg-orange-500/10 text-white'
-                      : 'border-slate-700 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'
+                        setPeekMode(option.value);
+                        setGeneratedPreview(null);
+                        setPreviewError(null);
+                        if (option.value !== 'excerpt') {
+                          setFileText(null);
+                          setQuickExcerptPosition(null);
+                          setSelectedExcerpt(null);
+                        }
+                      }}
+                      className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                        peekMode === option.value
+                          ? 'border-orange-500 bg-orange-500/10 text-white'
+                          : 'border-slate-700 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="mt-1 block text-xs opacity-75">{option.body}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  className={`soft-surface mb-4 rounded-xl border p-3 ${
+                    peekModeInfo.tone === 'public'
+                      ? 'border-amber-500/30 bg-amber-500/10'
+                      : 'border-slate-700 bg-slate-950/50'
                   }`}
                 >
-                  <span className="block text-sm font-semibold">{option.label}</span>
-                  <span className="mt-1 block text-xs opacity-75">{option.body}</span>
-                </button>
-              ))}
-            </div>
-
-            <div
-              className={`soft-surface mb-4 rounded-xl border p-3 ${
-                peekModeInfo.tone === 'public'
-                  ? 'border-amber-500/30 bg-amber-500/10'
-                  : 'border-slate-700 bg-slate-950/50'
-              }`}
-            >
-              <p
-                className={`text-sm font-medium ${
-                  peekModeInfo.tone === 'public' ? 'text-amber-200' : 'text-slate-200'
-                }`}
-              >
-                {peekModeInfo.title}
-              </p>
-              <p
-                className={`mt-1 text-xs ${
-                  peekModeInfo.tone === 'public' ? 'text-amber-100/70' : 'text-slate-500'
-                }`}
-              >
-                {peekModeInfo.body}
-              </p>
-            </div>
-
-            <div>
-              {peekMode !== 'none' && (
-                <div className="mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowPreviewControls((value) => !value)}
-                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-white"
+                  <p
+                    className={`text-sm font-medium ${
+                      peekModeInfo.tone === 'public' ? 'text-amber-200' : 'text-slate-200'
+                    }`}
                   >
-                    <SlidersHorizontal className="h-4 w-4" />
-                    More control
-                  </button>
-
-                  {showPreviewControls && (
-                    <div className="soft-appear mt-3 rounded-xl border border-slate-700 bg-slate-950/40 p-3">
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        {(Object.keys(PREVIEW_PRESETS) as PreviewPresetId[]).map((presetId) => {
-                          const preset = PREVIEW_PRESETS[presetId];
-                          return (
-                            <button
-                              key={presetId}
-                              type="button"
-                              onClick={() => {
-                                if (presetId === previewPreset) return;
-
-                                setPreviewPreset(presetId);
-                                setPreviewError(null);
-                              }}
-                              className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                                previewPreset === presetId
-                                  ? 'border-orange-500 bg-orange-500/10 text-white'
-                                  : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'
-                              }`}
-                            >
-                              <span className="block text-sm font-semibold">{preset.label}</span>
-                              <span className="mt-1 block text-xs opacity-75">{preset.body}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <p className="mt-3 text-xs text-slate-500">
-                        {activePreviewPreset.label}: up to {activePreviewPreset.lineLimit} lines,{' '}
-                        {activePreviewPreset.maxChars.toLocaleString()} chars, or{' '}
-                        {formatPercent(activePreviewPreset.maxPreviewRatio * 100)} of this file.
-                        Safety cap: {formatBytes(DEFAULT_TEXT_MAX_BYTES)}.
-                      </p>
-                    </div>
-                  )}
+                    {peekModeInfo.title}
+                  </p>
+                  <p
+                    className={`mt-1 text-xs ${
+                      peekModeInfo.tone === 'public' ? 'text-amber-100/70' : 'text-slate-500'
+                    }`}
+                  >
+                    {peekModeInfo.body}
+                  </p>
                 </div>
-              )}
 
-              {peekMode === 'excerpt' && fileText !== null && (
-                <div className="soft-appear">
-                  <p className="mb-2 text-xs text-slate-500">
-                    Pick a quick sample, or select text below. The public preview updates when you
-                    finish selecting.
-                  </p>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Quick sample
-                  </p>
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    {[
-                      { label: 'Start', value: 'start' as const },
-                      { label: 'Middle', value: 'middle' as const },
-                      { label: 'End', value: 'end' as const },
-                    ].map((option) => (
+                <div>
+                  {peekMode !== 'none' && (
+                    <div className="mb-4">
                       <button
-                        key={option.value}
                         type="button"
-                        onClick={() => applyQuickExcerpt(option.value)}
-                        className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                          quickExcerptPosition === option.value
-                            ? 'border-orange-500 bg-orange-500/10 text-white'
-                            : 'border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
-                        }`}
+                        onClick={() => setShowPreviewControls((value) => !value)}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-white"
                       >
-                        {option.label}
+                        <SlidersHorizontal className="h-4 w-4" />
+                        More control
                       </button>
-                    ))}
-                  </div>
-                  <textarea
-                    value={fileText}
-                    onMouseUp={handleExcerptSelectionCommit}
-                    onKeyUp={handleExcerptSelectionCommit}
-                    onTouchEnd={handleExcerptSelectionCommit}
-                    readOnly
-                    rows={8}
-                    className="mb-4 w-full resize-none rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200 selection:bg-orange-500/30 selection:text-orange-50 focus:border-orange-500 focus:outline-none"
-                    spellCheck={false}
-                  />
-                  {selectedExcerptStats?.tooLarge && (
-                    <p className="soft-appear mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">
-                      {selectedExcerptTooLargeMessage}
-                    </p>
+
+                      {showPreviewControls && (
+                        <div className="soft-appear mt-3 rounded-xl border border-slate-700 bg-slate-950/40 p-3">
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            {(Object.keys(PREVIEW_PRESETS) as PreviewPresetId[]).map((presetId) => {
+                              const preset = PREVIEW_PRESETS[presetId];
+                              return (
+                                <button
+                                  key={presetId}
+                                  type="button"
+                                  onClick={() => {
+                                    if (presetId === previewPreset) return;
+
+                                    setPreviewPreset(presetId);
+                                    setPreviewError(null);
+                                  }}
+                                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                                    previewPreset === presetId
+                                      ? 'border-orange-500 bg-orange-500/10 text-white'
+                                      : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'
+                                  }`}
+                                >
+                                  <span className="block text-sm font-semibold">
+                                    {preset.label}
+                                  </span>
+                                  <span className="mt-1 block text-xs opacity-75">
+                                    {preset.body}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-3 text-xs text-slate-500">
+                            {activePreviewPreset.label}: up to {activePreviewPreset.lineLimit}{' '}
+                            lines, {activePreviewPreset.maxChars.toLocaleString()} chars, or{' '}
+                            {formatPercent(activePreviewPreset.maxPreviewRatio * 100)} of this file.
+                            Safety cap: {formatBytes(DEFAULT_TEXT_MAX_BYTES)}.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {peekMode === 'excerpt' && fileText !== null && (
+                    <div className="soft-appear">
+                      <p className="mb-2 text-xs text-slate-500">
+                        Pick a quick sample, or select text below. The public preview updates when
+                        you finish selecting.
+                      </p>
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Quick sample
+                      </p>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        {[
+                          { label: 'Start', value: 'start' as const },
+                          { label: 'Middle', value: 'middle' as const },
+                          { label: 'End', value: 'end' as const },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => applyQuickExcerpt(option.value)}
+                            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                              quickExcerptPosition === option.value
+                                ? 'border-orange-500 bg-orange-500/10 text-white'
+                                : 'border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={fileText}
+                        onMouseUp={handleExcerptSelectionCommit}
+                        onKeyUp={handleExcerptSelectionCommit}
+                        onTouchEnd={handleExcerptSelectionCommit}
+                        readOnly
+                        rows={8}
+                        className="mb-4 w-full resize-none rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200 selection:bg-orange-500/30 selection:text-orange-50 focus:border-orange-500 focus:outline-none"
+                        spellCheck={false}
+                      />
+                      {selectedExcerptStats?.tooLarge && (
+                        <p className="soft-appear mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">
+                          {selectedExcerptTooLargeMessage}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {previewError ? (
+                    <p className="text-red-400 text-sm">{previewError}</p>
+                  ) : displayPreviewText !== undefined ? (
+                    <>
+                      <div className="soft-appear rounded-lg border border-orange-500/25 bg-orange-500/10 p-3">
+                        <div className="mb-3">
+                          <p className="text-xs font-medium uppercase tracking-wide text-orange-200/80">
+                            {previewCardTitle}
+                          </p>
+                          <p className="mt-1 text-xs text-orange-50/60">{previewCardHint}</p>
+                        </div>
+                        <pre className="h-48 overflow-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-orange-50/90">
+                          {displayPreviewText || 'Empty preview'}
+                        </pre>
+                      </div>
+                      <div className="pt-3">
+                        {displayPreviewStats ? (
+                          <p className="grid grid-cols-[4rem_5.5rem_6rem] gap-2 text-xs text-slate-500">
+                            <span className="tabular-nums">
+                              {displayPreviewStats.lines} line
+                              {displayPreviewStats.lines === 1 ? '' : 's'}
+                            </span>
+                            <span className="tabular-nums">
+                              {compactCount(displayPreviewStats.chars)} chars
+                            </span>
+                            <span className="tabular-nums">
+                              {formatPercent(displayPreviewStats.percent)} public
+                            </span>
+                          </p>
+                        ) : null}
+                        {largeReveal && (
+                          <p className="soft-appear mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                            This is a larger public peek. Anyone with the stash link can read it
+                            before paying.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : peekMode === 'auto' && fileSummaryText ? (
+                    <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
+                      <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
+                      <div>
+                        <p className="text-slate-300 text-sm">{fileSummaryText.title}</p>
+                        <p className="text-slate-500 text-xs mt-1">{fileSummaryText.body}</p>
+                      </div>
+                    </div>
+                  ) : peekMode === 'auto' ? null : peekMode === 'excerpt' ? (
+                    <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
+                      <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
+                      <div>
+                        <p className="text-slate-300 text-sm">Pick text to show buyers.</p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          Use Start, Middle, End, or select text yourself.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
+                      <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
+                      <div>
+                        <p className="text-slate-300 text-sm">No public preview will be shown.</p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          The file will still get a commitment check after unlock.
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
-              )}
-
-              {previewError ? (
-                <p className="text-red-400 text-sm">{previewError}</p>
-              ) : displayPreviewText !== undefined ? (
-                <>
-                  <div className="soft-appear rounded-lg border border-orange-500/25 bg-orange-500/10 p-3">
-                    <div className="mb-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-orange-200/80">
-                        {previewCardTitle}
-                      </p>
-                      <p className="mt-1 text-xs text-orange-50/60">{previewCardHint}</p>
-                    </div>
-                    <pre className="h-48 overflow-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-orange-50/90">
-                      {displayPreviewText || 'Empty preview'}
-                    </pre>
-                  </div>
-                  <div className="pt-3">
-                    {displayPreviewStats ? (
-                      <p className="grid grid-cols-[4rem_5.5rem_6rem] gap-2 text-xs text-slate-500">
-                        <span className="tabular-nums">
-                          {displayPreviewStats.lines} line
-                          {displayPreviewStats.lines === 1 ? '' : 's'}
-                        </span>
-                        <span className="tabular-nums">
-                          {compactCount(displayPreviewStats.chars)} chars
-                        </span>
-                        <span className="tabular-nums">
-                          {formatPercent(displayPreviewStats.percent)} public
-                        </span>
-                      </p>
-                    ) : null}
-                    {largeReveal && (
-                      <p className="soft-appear mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                        This is a larger public peek. Anyone with the stash link can read it before
-                        paying.
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : peekMode === 'auto' && fileSummaryText ? (
-                <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
-                  <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-slate-300 text-sm">{fileSummaryText.title}</p>
-                    <p className="text-slate-500 text-xs mt-1">{fileSummaryText.body}</p>
-                  </div>
-                </div>
-              ) : peekMode === 'auto' ? null : peekMode === 'excerpt' ? (
-                <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
-                  <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-slate-300 text-sm">Pick text to show buyers.</p>
-                    <p className="text-slate-500 text-xs mt-1">
-                      Use Start, Middle, End, or select text yourself.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="soft-appear flex items-start gap-3 rounded-xl bg-slate-950/50 p-4">
-                  <FileText className="mt-0.5 w-5 h-5 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-slate-300 text-sm">No public peek will be shown.</p>
-                    <p className="text-slate-500 text-xs mt-1">
-                      The file will still get a commitment check after unlock.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         )}
 

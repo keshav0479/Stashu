@@ -499,7 +499,9 @@ export function UnlockPage() {
                 >
                   {previewVerification.state === 'invalid'
                     ? 'Stash verification failed'
-                    : 'Verified Peek'}
+                    : previewVerification.text !== undefined
+                      ? 'Verified Peek'
+                      : 'File verification ready'}
                 </p>
               </div>
 
@@ -524,8 +526,7 @@ export function UnlockPage() {
                 <div className="flex items-start gap-2 rounded-lg bg-slate-950/50 p-3 text-left">
                   <FileText className="mt-0.5 w-4 h-4 shrink-0 text-slate-400" />
                   <p className="text-sm text-slate-400">
-                    No public peek. Stashu will still check the unlocked file against this
-                    commitment after payment.
+                    No public preview. Stashu will verify the unlocked file after payment.
                   </p>
                 </div>
               )}
@@ -536,8 +537,9 @@ export function UnlockPage() {
         {!previewProofInvalid && (
           <>
             {/* Payment Tabs */}
-            <div className="flex mb-6 bg-slate-800/50 rounded-xl p-1">
+            <div className="flex mb-2 bg-slate-800/50 rounded-xl p-1">
               <button
+                type="button"
                 onClick={() => setTab('lightning')}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all text-sm ${
                   tab === 'lightning'
@@ -546,9 +548,10 @@ export function UnlockPage() {
                 }`}
               >
                 <Zap className="w-4 h-4" />
-                Pay with Lightning
+                Lightning invoice
               </button>
               <button
+                type="button"
                 onClick={() => setTab('cashu')}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all text-sm ${
                   tab === 'cashu'
@@ -557,9 +560,12 @@ export function UnlockPage() {
                 }`}
               >
                 <Key className="w-4 h-4" />
-                Pay with Cashu
+                Cashu token
               </button>
             </div>
+            <p className="mb-6 text-center text-xs text-slate-500">
+              Pay an invoice, or paste a Cashu token directly.
+            </p>
 
             {/* Lightning Tab */}
             {tab === 'lightning' && (
