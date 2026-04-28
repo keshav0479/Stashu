@@ -14,6 +14,7 @@ import {
 
 interface FileUploaderProps {
   onFileSelect: (file: File) => void;
+  onFileClear?: () => void;
   disabled?: boolean;
   maxSizeMB?: number;
 }
@@ -43,6 +44,7 @@ function formatSize(bytes: number): string {
 
 export function FileUploader({
   onFileSelect,
+  onFileClear,
   disabled = false,
   maxSizeMB = 50,
 }: FileUploaderProps) {
@@ -88,6 +90,7 @@ export function FileUploader({
   const clearFile = () => {
     setSelectedFile(null);
     setError(null);
+    onFileClear?.();
   };
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -125,6 +128,7 @@ export function FileUploader({
       <div className="w-full">
         <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 relative group">
           <button
+            type="button"
             onClick={clearFile}
             className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
             title="Remove file"

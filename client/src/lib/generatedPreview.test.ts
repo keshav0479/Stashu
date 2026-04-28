@@ -4,6 +4,7 @@ import {
   decodeGeneratedPreviewBytes,
   generatePreviewFromBytes,
   generatePreviewFromFile,
+  isTextPreviewSupported,
   serializeGeneratedPreviewPayload,
   type GeneratedPreviewPayload,
   type TextLineLimit,
@@ -391,6 +392,15 @@ describe('generated preview payloads', () => {
       expect(preview.metadata).toEqual({ reason: 'unsupported-type' });
       expect(preview.bytes).toBe('');
     }
+  });
+
+  it('exposes the same text support check for the upload UI', () => {
+    expect(isTextPreviewSupported('guide.md', 'application/octet-stream')).toBe(true);
+    expect(isTextPreviewSupported('notes.txt', '')).toBe(true);
+    expect(isTextPreviewSupported('data.json', 'application/json')).toBe(true);
+    expect(isTextPreviewSupported('paper.pdf', 'application/pdf')).toBe(false);
+    expect(isTextPreviewSupported('photo.png', 'image/png')).toBe(false);
+    expect(isTextPreviewSupported('bundle.zip', 'application/zip')).toBe(false);
   });
 
   it('falls back to a file summary when text decoding fails', () => {
