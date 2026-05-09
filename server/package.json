@@ -9,18 +9,18 @@
     "test": "tsx --experimental-test-module-mocks --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@cashu/cashu-ts": "^3.6.4",
+    "@cashu/cashu-ts": "^3.7.0",
     "@hono/node-server": "^1.19.14",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "better-sqlite3": "^11.0.0",
-    "hono": "^4.12.15",
+    "hono": "^4.12.18",
     "nostr-tools": "^2.23.3",
-    "uuid": "^11.0.0"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
-    "@types/uuid": "^10.0.0",
+    "@types/uuid": "^11.0.0",
     "tsx": "^4.7.0",
     "typescript": "~5.9.3"
   }
