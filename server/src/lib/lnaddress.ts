@@ -32,6 +32,71 @@ function isSafeUrl(url: string): boolean {
 }
 
 /**
+ * Safely parse a fetch Response as JSON, enforcing a maximum body size in bytes.
+ * Prevents heap exhaustion DoS from malicious external responses.
+ */
+async function parseJsonWithLimit<T>(response: Response, limitBytes: number = 65536): Promise<T> {
+  // Check Content-Length header if present
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > limitBytes) {
+    throw new Error('Response size exceeds limit');
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (text.length > limitBytes) {
+      throw new Error('Response size exceeds limit');
+    }
+    return JSON.parse(text) as T;
+  }
+
+  // Support both Web Stream getReader and async iterator
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  if (typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        totalBytes += value.length;
+        if (totalBytes > limitBytes) {
+          await reader.cancel(); // Cancel the stream immediately to stop external server from sending more bytes
+          throw new Error('Response size exceeds limit');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } else {
+    // Fallback to async iteration (for some environments where response.body is a Node Readable)
+    const stream = response.body as any;
+    for await (const chunk of stream) {
+      const bytes = chunk instanceof Uint8Array ? chunk : Buffer.from(chunk);
+      totalBytes += bytes.length;
+      if (totalBytes > limitBytes) {
+        throw new Error('Response size exceeds limit');
+      }
+      chunks.push(bytes);
+    }
+  }
+
+  // Combine chunks
+  const buffer = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const text = new TextDecoder().decode(buffer);
+  return JSON.parse(text) as T;
+}
+
+/**
  * Resolve a Lightning address (user@domain.com) to a BOLT11 invoice
  * Lightning addresses are LNURL-pay endpoints per LUD-16
  * https://github.com/lnurl/luds/blob/luds/16.md
@@ -57,14 +122,14 @@ export async function resolveAddress(address: string, amountSats: number): Promi
     throw new Error(`Could not resolve Lightning address: ${metaResponse.statusText}`);
   }
 
-  const meta = (await metaResponse.json()) as {
+  const meta = await parseJsonWithLimit<{
     callback: string;
     minSendable: number;
     maxSendable: number;
     tag: string;
     status?: string;
     reason?: string;
-  };
+  }>(metaResponse);
 
   if (meta.status === 'ERROR') {
     throw new Error(meta.reason || 'Lightning address endpoint returned an error');
@@ -100,11 +165,11 @@ export async function resolveAddress(address: string, amountSats: number): Promi
     throw new Error(`Failed to get invoice from Lightning address: ${invoiceResponse.statusText}`);
   }
 
-  const invoiceData = (await invoiceResponse.json()) as {
+  const invoiceData = await parseJsonWithLimit<{
     pr: string;
     status?: string;
     reason?: string;
-  };
+  }>(invoiceResponse);
 
   if (invoiceData.status === 'ERROR') {
     throw new Error(invoiceData.reason || 'Failed to generate invoice');
