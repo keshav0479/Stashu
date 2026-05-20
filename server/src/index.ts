@@ -12,7 +12,7 @@ import { settingsRoutes } from './routes/settings.js';
 import { sellerRoutes } from './routes/seller.js';
 import { requireAuth } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';
-import { bodyLimit } from 'hono/body-limit';
+import { requestBodyLimit } from './middleware/requestBodyLimit.js';
 
 import { recoverPendingMelts, recoverMintFailures } from './lib/recovery.js';
 
@@ -56,15 +56,7 @@ app.use(
 
 // Limit request body size to 1MB to prevent heap exhaustion attacks
 // Registered after CORS/Security headers so early 413 responses include CORS headers
-app.use(
-  '*',
-  bodyLimit({
-    maxSize: 1024 * 1024, // 1MB
-    onError: (c) => {
-      return c.json({ success: false, error: 'Payload too large' }, 413);
-    },
-  })
-);
+app.use('*', requestBodyLimit);
 
 // Health check
 app.get('/api/health', (c) => c.json({ status: 'ok', name: 'Stashu API', version: '0.1.0' }));

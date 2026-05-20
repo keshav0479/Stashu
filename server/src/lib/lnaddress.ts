@@ -31,11 +31,16 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
+export const MAX_LNURL_RESPONSE_BYTES = 64 * 1024;
+
 /**
  * Safely parse a fetch Response as JSON, enforcing a maximum body size in bytes.
  * Prevents heap exhaustion DoS from malicious external responses.
  */
-async function parseJsonWithLimit<T>(response: Response, limitBytes: number = 65536): Promise<T> {
+async function parseJsonWithLimit<T>(
+  response: Response,
+  limitBytes: number = MAX_LNURL_RESPONSE_BYTES
+): Promise<T> {
   // Check Content-Length header if present
   const contentLength = response.headers.get('content-length');
   if (contentLength && parseInt(contentLength, 10) > limitBytes) {
