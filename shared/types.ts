@@ -101,7 +101,31 @@ export interface StashPublicInfo {
   previewUrl?: string;
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
+  // How long (seconds) a buyer can re-download on their device after paying.
+  // Always resolved server-side (legacy stashes fall back to the default).
+  downloadWindowSeconds: number;
 }
+
+// ============================================
+// Re-download window
+// ============================================
+
+// Per-stash re-download grace period: how long after paying a buyer can
+// re-download on the same device using their claim token. Seller picks one
+// of these on /sell. Day-based only — no hour granularity, no "never".
+export const DOWNLOAD_WINDOW_OPTIONS = [
+  { value: 86_400, label: '1 day' },
+  { value: 604_800, label: '7 days' },
+  { value: 2_592_000, label: '30 days' },
+] as const;
+
+// Used when a seller doesn't choose, and for legacy stashes created before
+// this feature (stored window is NULL).
+export const DEFAULT_DOWNLOAD_WINDOW_SECONDS = 604_800; // 7 days
+
+export const ALLOWED_DOWNLOAD_WINDOW_SECONDS: ReadonlySet<number> = new Set(
+  DOWNLOAD_WINDOW_OPTIONS.map((option) => option.value)
+);
 
 // ============================================
 // Payment Types
@@ -138,6 +162,8 @@ export interface CreateStashRequest {
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
   previewSecret?: StashProofSecret;
+  // One of DOWNLOAD_WINDOW_OPTIONS. Omitted falls back to the default server-side.
+  downloadWindowSeconds?: number;
 }
 
 export interface CreateStashResponse {
@@ -156,6 +182,7 @@ export interface UnlockResponse {
   blobSha256?: string;
   fileName: string;
   claimToken?: string;
+  claimExpiresAt?: number; // unix seconds — when the re-download window ends
   previewSecret?: StashProofSecret;
 }
 
@@ -223,6 +250,7 @@ export interface PayStatusResponse {
   blobSha256?: string;
   fileName?: string;
   claimToken?: string;
+  claimExpiresAt?: number; // unix seconds — when the re-download window ends
   previewSecret?: StashProofSecret;
 }
 

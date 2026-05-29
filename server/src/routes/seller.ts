@@ -7,6 +7,7 @@ import type {
   StashPublicInfo,
   APIResponse,
 } from '../../../shared/types.js';
+import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
 export const sellerRoutes = new Hono();
@@ -56,7 +57,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
 
     const stmt = db.prepare(`
       SELECT id, title, description, file_name, file_size, price_sats, preview_url,
-             generated_preview_payload, preview_proof, created_at
+             generated_preview_payload, preview_proof, download_window_seconds, created_at
       FROM stashes
       WHERE seller_pubkey = ? AND show_in_storefront = 1
       ORDER BY created_at DESC
@@ -73,6 +74,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'preview_url'
       | 'generated_preview_payload'
       | 'preview_proof'
+      | 'download_window_seconds'
       | 'created_at'
     >[];
 
@@ -86,6 +88,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(row.preview_proof),
+      downloadWindowSeconds: row.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS,
     }));
 
     return c.json<APIResponse<StashPublicInfo[]>>({

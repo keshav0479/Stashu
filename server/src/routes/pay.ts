@@ -14,25 +14,27 @@ import type {
   StashProofSecret,
   APIResponse,
 } from '../../../shared/types.js';
+import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 import type { StashRow, PaymentRow } from '../db/types.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 
 function ensureClaimToken(
   payment: Pick<PaymentRow, 'claim_token' | 'claim_expires_at'>,
-  paymentId: string
-): string {
+  paymentId: string,
+  windowSeconds: number
+): { claimToken: string; claimExpiresAt: number } {
   const now = Math.floor(Date.now() / 1000);
   if (payment.claim_token && payment.claim_expires_at && payment.claim_expires_at >= now) {
-    return payment.claim_token;
+    return { claimToken: payment.claim_token, claimExpiresAt: payment.claim_expires_at };
   }
   const claimToken = randomBytes(32).toString('hex');
-  const claimExpiresAt = now + 3600;
+  const claimExpiresAt = now + windowSeconds;
   db.prepare(`UPDATE payments SET claim_token = ?, claim_expires_at = ? WHERE id = ?`).run(
     claimToken,
     claimExpiresAt,
     paymentId
   );
-  return claimToken;
+  return { claimToken, claimExpiresAt };
 }
 
 function decryptPreviewSecret(value: string | null): StashProofSecret | undefined {
@@ -108,14 +110,24 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     if (existingPayment.status === 'paid') {
       const stash = db
         .prepare(
-          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name FROM stashes WHERE id = ?'
+          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
         )
         .get(stashId) as Pick<
         StashRow,
-        'secret_key' | 'blob_url' | 'blob_sha256' | 'preview_secret' | 'file_name'
+        | 'secret_key'
+        | 'blob_url'
+        | 'blob_sha256'
+        | 'preview_secret'
+        | 'file_name'
+        | 'download_window_seconds'
       >;
 
-      const claimToken = ensureClaimToken(existingPayment, paymentId);
+      const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
+      const { claimToken, claimExpiresAt } = ensureClaimToken(
+        existingPayment,
+        paymentId,
+        windowSeconds
+      );
 
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,
@@ -127,6 +139,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           fileName: decrypt(stash.file_name),
           previewSecret: decryptPreviewSecret(stash.preview_secret),
           claimToken,
+          claimExpiresAt,
         },
       });
     }
@@ -156,19 +169,26 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       if (current?.status === 'paid') {
         const stash = db
           .prepare(
-            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name FROM stashes WHERE id = ?'
+            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
           )
           .get(stashId) as Pick<
           StashRow,
-          'secret_key' | 'blob_url' | 'blob_sha256' | 'preview_secret' | 'file_name'
+          | 'secret_key'
+          | 'blob_url'
+          | 'blob_sha256'
+          | 'preview_secret'
+          | 'file_name'
+          | 'download_window_seconds'
         >;
 
+        const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
         const paidRow = db
           .prepare('SELECT claim_token, claim_expires_at FROM payments WHERE id = ?')
           .get(paymentId) as Pick<PaymentRow, 'claim_token' | 'claim_expires_at'>;
-        const claimToken = ensureClaimToken(
+        const { claimToken, claimExpiresAt } = ensureClaimToken(
           paidRow ?? { claim_token: null, claim_expires_at: null },
-          paymentId
+          paymentId,
+          windowSeconds
         );
 
         return c.json<APIResponse<PayStatusResponse>>({
@@ -181,6 +201,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
             fileName: decrypt(stash.file_name),
             previewSecret: decryptPreviewSecret(stash.preview_secret),
             claimToken,
+            claimExpiresAt,
           },
         });
       }
@@ -204,7 +225,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     const stash = db
       .prepare(
-        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey FROM stashes WHERE id = ?'
+        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey, download_window_seconds FROM stashes WHERE id = ?'
       )
       .get(stashId) as Pick<
       StashRow,
@@ -216,11 +237,14 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       | 'preview_secret'
       | 'file_name'
       | 'seller_pubkey'
+      | 'download_window_seconds'
     > | null;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
     }
+
+    const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
 
     try {
       // Mint tokens from the paid invoice
@@ -247,7 +271,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       }
 
       const claimToken = randomBytes(32).toString('hex');
-      const claimExpiresAt = Math.floor(Date.now() / 1000) + 3600; // 1hr
+      const claimExpiresAt = Math.floor(Date.now() / 1000) + windowSeconds;
 
       db.prepare(
         `UPDATE payments SET status = 'paid', seller_token = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
@@ -268,6 +292,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           fileName: decrypt(stash.file_name),
           previewSecret: decryptPreviewSecret(stash.preview_secret),
           claimToken,
+          claimExpiresAt,
         },
       });
     } catch (mintError) {

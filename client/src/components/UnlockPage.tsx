@@ -17,6 +17,7 @@ import {
   FileText,
   ShieldAlert,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import { useUnlock } from '../lib/useUnlock';
 import { createPayInvoice, checkPayStatus } from '../lib/api';
@@ -24,6 +25,18 @@ import { verifyGeneratedPreviewBundle } from '../lib/verifiedPreview';
 import type { StashProofSecret, TextPreviewMetadata } from '../../../shared/types';
 
 type PayTab = 'lightning' | 'cashu';
+
+function formatWindow(seconds: number): string {
+  const days = Math.max(1, Math.round(seconds / 86_400));
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+function formatDeadline(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
 
 export function UnlockPage() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +112,7 @@ export function UnlockPage() {
       blobSha256?: string;
       fileName?: string;
       claimToken?: string;
+      claimExpiresAt?: number;
       previewSecret?: StashProofSecret;
     }) => {
       unlock.submitLightningResult(data);
@@ -153,6 +167,7 @@ export function UnlockPage() {
               blobSha256: status.blobSha256,
               fileName: status.fileName,
               claimToken: status.claimToken,
+              claimExpiresAt: status.claimExpiresAt,
               previewSecret: status.previewSecret,
             });
           }
@@ -435,6 +450,43 @@ export function UnlockPage() {
             Download File
           </button>
 
+          {unlock.claimExpiresAt && (
+            <p className="mb-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-500">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              You can re-download on this device until {formatDeadline(unlock.claimExpiresAt)}.
+            </p>
+          )}
+
+          <Link to="/" className="block text-slate-400 hover:text-white transition-colors">
+            ← Back to Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Re-download window ended — buyer paid before, but the claim token has expired
+  if (unlock.status === 'expired') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+        <div className="max-w-lg w-full text-center">
+          <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/20 rounded-2xl flex items-center justify-center">
+            <Clock className="w-10 h-10 text-amber-400" />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-4">Re-download window ended</h1>
+          <p className="text-slate-400 mb-8">
+            Your previous payment let you re-download this file for a limited time, and that window
+            has now closed. To get the file again, you'll need to unlock it with a new payment.
+          </p>
+
+          <button
+            onClick={() => unlock.payAgain()}
+            className="btn-primary mb-4 w-full px-6 py-4 text-lg"
+          >
+            <LockOpen className="w-5 h-5" />
+            Unlock again
+          </button>
+
           <Link to="/" className="block text-slate-400 hover:text-white transition-colors">
             ← Back to Home
           </Link>
@@ -477,6 +529,14 @@ export function UnlockPage() {
               <p className="text-orange-400 font-bold text-xl">{unlock.stash?.priceSats} sats</p>
             </div>
           </div>
+
+          {unlock.stash && (
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-500">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              After paying, you can re-download on this device for{' '}
+              {formatWindow(unlock.stash.downloadWindowSeconds)}.
+            </p>
+          )}
 
           {unlock.stash?.generatedPreview && (
             <div

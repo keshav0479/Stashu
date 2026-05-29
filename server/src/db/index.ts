@@ -175,20 +175,8 @@ function cleanupStaleQuotes() {
     console.log(`🔄 Reset ${recovered.changes} stuck processing payments to pending`);
   }
 
-  // Null out expired claim tokens (column added in migration v5)
-  try {
-    const expiredClaims = db
-      .prepare(
-        `UPDATE payments SET claim_token = NULL, claim_expires_at = NULL
-         WHERE claim_token IS NOT NULL AND claim_expires_at < ?`
-      )
-      .run(Math.floor(Date.now() / 1000));
-    if (expiredClaims.changes > 0) {
-      console.log(`🧹 Cleaned up ${expiredClaims.changes} expired claim token(s)`);
-    }
-  } catch {
-    // Column doesn't exist yet (pre-migration v5), skip
-  }
+  // Keep expired claim tokens so /api/unlock/:id/claim can return 410
+  // instead of treating a known-but-expired local token as unknown.
 }
 
 // Run cleanup on startup and every 5 minutes
@@ -398,6 +386,14 @@ const currentVersion = (
           update.run(encrypt(row.blob_url), row.id);
         }
         console.log(`🔐 Encrypted ${rows.length} blob URL(s).`);
+      },
+    },
+    {
+      version: 11,
+      name: 'add download_window_seconds to stashes',
+      run: () => {
+        db.exec(`ALTER TABLE stashes ADD COLUMN download_window_seconds INTEGER DEFAULT NULL`);
+        console.log('⏳ Added download_window_seconds column to stashes.');
       },
     },
   ];

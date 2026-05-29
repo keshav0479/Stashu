@@ -21,6 +21,7 @@ import {
 } from '../lib/generatedPreview';
 import { decodeTextPreview } from '../lib/verifiedPreview';
 import type { TextPreviewMetadata } from '../../../shared/types';
+import { DOWNLOAD_WINDOW_OPTIONS, DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types';
 
 type PeekMode = 'none' | 'auto' | 'excerpt';
 type PreviewPresetId = 'shorter' | 'standard' | 'larger';
@@ -229,6 +230,9 @@ export function SellPage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [downloadWindowSeconds, setDownloadWindowSeconds] = useState<number>(
+    DEFAULT_DOWNLOAD_WINDOW_SECONDS
+  );
   const [showRecoveryModal, setShowRecoveryModal] = useState(() => {
     getOrCreateIdentity();
     return !hasAcknowledgedRecovery();
@@ -567,6 +571,7 @@ export function SellPage() {
       title,
       description: description || undefined,
       priceSats,
+      downloadWindowSeconds,
       peekMode,
       previewLineLimit: activePreviewPreset.lineLimit,
       previewMaxChars: activePreviewPreset.maxChars,
@@ -969,6 +974,30 @@ export function SellPage() {
                        focus:outline-none focus:border-orange-500"
             />
             {priceError && <p className="mt-2 text-red-400 text-sm">{priceError}</p>}
+          </div>
+
+          <div>
+            <label className="block text-slate-300 mb-2">Re-download window</label>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {DOWNLOAD_WINDOW_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setDownloadWindowSeconds(option.value)}
+                  className={`rounded-xl border px-3 py-3 text-center text-sm font-semibold transition-colors ${
+                    downloadWindowSeconds === option.value
+                      ? 'border-orange-500 bg-orange-500/10 text-white'
+                      : 'border-slate-700 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Sets how long buyers can re-download on their device after paying. After it ends,
+              they'd pay again to get the file.
+            </p>
           </div>
         </div>
 

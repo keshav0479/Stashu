@@ -25,6 +25,7 @@ export interface StashOptions {
   title: string;
   description?: string;
   priceSats: number;
+  downloadWindowSeconds: number;
   peekMode?: 'none' | 'auto' | 'excerpt';
   previewLineLimit?: TextLineLimit;
   previewMaxChars?: number;
@@ -103,6 +104,7 @@ export function useStash() {
         priceSats: options.priceSats,
         title: options.title,
         description: options.description,
+        downloadWindowSeconds: options.downloadWindowSeconds,
         fileName: file.name,
         fileSize: file.size,
         generatedPreview,
