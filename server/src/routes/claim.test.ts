@@ -17,6 +17,7 @@ process.env.DB_PATH = ':memory:';
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
+import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 
 // Mock Cashu module before any route imports
 mock.module('../lib/cashu.js', {
@@ -109,6 +110,59 @@ describe('Fresh Cashu payment returns claimToken', () => {
       payment.claim_expires_at > Math.floor(Date.now() / 1000),
       'claim_expires_at should be in the future'
     );
+  });
+});
+
+describe('Re-download window controls claim expiry', () => {
+  function insertStashWithWindow(windowSeconds: number | null, id = TEST_STASH.id) {
+    db.prepare(
+      `INSERT INTO stashes (id, blob_url, secret_key, seller_pubkey, price_sats, title, file_name, file_size, download_window_seconds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      encrypt(TEST_STASH.blobUrl),
+      encrypt(TEST_STASH.secretKey),
+      TEST_STASH.sellerPubkey,
+      TEST_STASH.priceSats,
+      encrypt('Test Stash'),
+      encrypt(TEST_STASH.fileName),
+      1024,
+      windowSeconds
+    );
+  }
+
+  it('sets claim_expires_at to now + the stash window on a fresh unlock', async () => {
+    insertStashWithWindow(86_400);
+    const before = Math.floor(Date.now() / 1000);
+
+    const res = await unlockApp.request(`/api/unlock/${TEST_STASH.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'cashuWindowToken' }),
+    });
+
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+    const after = Math.floor(Date.now() / 1000);
+    assert.ok(data.claimExpiresAt >= before + 86_400, 'expiry must honor the stash window');
+    assert.ok(data.claimExpiresAt <= after + 86_400, 'expiry must not exceed now + window');
+  });
+
+  it('falls back to the default window when the stash has none', async () => {
+    insertStashWithWindow(null);
+    const before = Math.floor(Date.now() / 1000);
+
+    const res = await unlockApp.request(`/api/unlock/${TEST_STASH.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'cashuDefaultWindowToken' }),
+    });
+
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+    const after = Math.floor(Date.now() / 1000);
+    assert.ok(data.claimExpiresAt >= before + DEFAULT_DOWNLOAD_WINDOW_SECONDS);
+    assert.ok(data.claimExpiresAt <= after + DEFAULT_DOWNLOAD_WINDOW_SECONDS);
   });
 });
 

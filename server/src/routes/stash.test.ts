@@ -14,6 +14,7 @@ process.env.DB_PATH = ':memory:';
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
+import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 
 const db = (await import('../db/index.js')).default;
 const { decrypt } = await import('../lib/encryption.js');
@@ -156,6 +157,22 @@ describe('POST /api/stash', () => {
     assert.equal(body.success, true);
     assert.ok(body.data.id);
     assert.ok(body.data.shareUrl.startsWith('/s/'));
+  });
+
+  it('rejects a downloadWindowSeconds outside the allowed set', async () => {
+    const res = await createStash({ ...validBody(), downloadWindowSeconds: 12_345 });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /downloadWindowSeconds/i);
+  });
+
+  it('stores a valid downloadWindowSeconds', async () => {
+    const res = await createStash({ ...validBody(), downloadWindowSeconds: 86_400 });
+    assert.equal(res.status, 201);
+    const { data } = await res.json();
+    const row = db
+      .prepare('SELECT download_window_seconds FROM stashes WHERE id = ?')
+      .get(data.id) as { download_window_seconds: number };
+    assert.equal(row.download_window_seconds, 86_400);
   });
 
   it('stores generated preview proof fields when provided', async () => {
@@ -677,6 +694,24 @@ describe('GET /api/stash/:id', () => {
     const res = await app.request(`/api/stash/${created.id}`);
     const { data } = await res.json();
     assert.equal(data.description, 'A test description');
+  });
+
+  it('defaults downloadWindowSeconds when the seller did not set one', async () => {
+    const createRes = await createStash();
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}`);
+    const { data } = await res.json();
+    assert.equal(data.downloadWindowSeconds, DEFAULT_DOWNLOAD_WINDOW_SECONDS);
+  });
+
+  it('returns the seller-chosen downloadWindowSeconds', async () => {
+    const createRes = await createStash({ ...validBody(), downloadWindowSeconds: 2_592_000 });
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}`);
+    const { data } = await res.json();
+    assert.equal(data.downloadWindowSeconds, 2_592_000);
   });
 
   it('returns public generated preview proof but not preview secret', async () => {

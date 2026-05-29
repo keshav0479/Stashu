@@ -11,6 +11,7 @@ import type {
   UnlockResponse,
   APIResponse,
 } from '../../../shared/types.js';
+import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 import type { StashRow, PaymentRow } from '../db/types.js';
 
 export const unlockRoutes = new Hono();
@@ -37,7 +38,7 @@ unlockRoutes.post('/:id', async (c) => {
 
     // Get stash details
     const stashStmt = db.prepare(`
-      SELECT id, blob_url, blob_sha256, secret_key, preview_secret, file_name, price_sats, seller_pubkey
+      SELECT id, blob_url, blob_sha256, secret_key, preview_secret, file_name, price_sats, seller_pubkey, download_window_seconds
       FROM stashes WHERE id = ?
     `);
     const stash = stashStmt.get(stashId) as Pick<
@@ -50,6 +51,7 @@ unlockRoutes.post('/:id', async (c) => {
       | 'file_name'
       | 'price_sats'
       | 'seller_pubkey'
+      | 'download_window_seconds'
     > | null;
 
     if (!stash) {
@@ -62,6 +64,8 @@ unlockRoutes.post('/:id', async (c) => {
       );
     }
 
+    const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
+
     // Create payment ID from full token hash (for idempotency)
     const tokenHash = createHash('sha256').update(body.token).digest('hex');
     const paymentId = `${stashId}-${tokenHash}`;
@@ -73,9 +77,12 @@ unlockRoutes.post('/:id', async (c) => {
 
     if (existingPayment) {
       if (existingPayment.status === 'paid') {
-        // Already paid - return the key (idempotent)
-        // Regenerate claim token if missing or expired
+        // Already paid - return the key (idempotent). Regenerate the claim token if
+        // missing/expired. NOTE: re-submitting the original payment token deliberately
+        // grants a fresh window past expiry — proof-of-payment recovery, intentionally
+        // softer than GET /claim's hard 410. Don't "fix" this mismatch.
         let claimToken = existingPayment.claim_token;
+        let claimExpiresAt = existingPayment.claim_expires_at;
         const now = Math.floor(Date.now() / 1000);
         if (
           !claimToken ||
@@ -83,7 +90,7 @@ unlockRoutes.post('/:id', async (c) => {
           existingPayment.claim_expires_at < now
         ) {
           claimToken = randomBytes(32).toString('hex');
-          const claimExpiresAt = now + 3600;
+          claimExpiresAt = now + windowSeconds;
           db.prepare(`UPDATE payments SET claim_token = ?, claim_expires_at = ? WHERE id = ?`).run(
             claimToken,
             claimExpiresAt,
@@ -99,6 +106,7 @@ unlockRoutes.post('/:id', async (c) => {
             fileName: decrypt(stash.file_name),
             previewSecret: decryptPreviewSecret(stash.preview_secret),
             claimToken,
+            claimExpiresAt: claimExpiresAt ?? undefined,
           },
         });
       } else if (existingPayment.status === 'pending') {
@@ -153,7 +161,7 @@ unlockRoutes.post('/:id', async (c) => {
     }
 
     const claimToken = randomBytes(32).toString('hex');
-    const claimExpiresAt = Math.floor(Date.now() / 1000) + 3600; // 1hr
+    const claimExpiresAt = Math.floor(Date.now() / 1000) + windowSeconds;
 
     db.prepare(
       `
@@ -178,6 +186,7 @@ unlockRoutes.post('/:id', async (c) => {
         fileName: decrypt(stash.file_name),
         previewSecret: decryptPreviewSecret(stash.preview_secret),
         claimToken,
+        claimExpiresAt,
       },
     });
   } catch (error) {
@@ -239,6 +248,7 @@ unlockRoutes.get('/:id/claim', rateLimit(60_000, 10, '/api/unlock/claim'), async
       blobSha256: stash.blob_sha256 ?? undefined,
       fileName: decrypt(stash.file_name),
       previewSecret: decryptPreviewSecret(stash.preview_secret),
+      claimExpiresAt: payment.claim_expires_at,
     },
   });
 });

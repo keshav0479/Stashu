@@ -12,6 +12,10 @@ import type {
   StashPublicInfo,
   APIResponse,
 } from '../../../shared/types.js';
+import {
+  ALLOWED_DOWNLOAD_WINDOW_SECONDS,
+  DEFAULT_DOWNLOAD_WINDOW_SECONDS,
+} from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
 export const stashRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -372,6 +376,16 @@ stashRoutes.post('/', async (c) => {
       );
     }
 
+    if (
+      body.downloadWindowSeconds !== undefined &&
+      !ALLOWED_DOWNLOAD_WINDOW_SECONDS.has(body.downloadWindowSeconds)
+    ) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'downloadWindowSeconds must be one of the allowed values' },
+        400
+      );
+    }
+
     const previewError = validatePreviewBundle(body);
     if (previewError) {
       return c.json<APIResponse<never>>({ success: false, error: previewError }, 400);
@@ -383,9 +397,9 @@ stashRoutes.post('/', async (c) => {
       INSERT INTO stashes (
         id, blob_url, blob_sha256, secret_key, seller_pubkey, price_sats,
         title, description, file_name, file_size, preview_url,
-        generated_preview_payload, preview_proof, preview_secret
+        generated_preview_payload, preview_proof, preview_secret, download_window_seconds
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -402,7 +416,8 @@ stashRoutes.post('/', async (c) => {
       body.previewUrl || null,
       body.generatedPreview ? stringifyEncryptedJson(body.generatedPreview) : null,
       body.previewProof ? stringifyEncryptedJson(body.previewProof) : null,
-      body.previewSecret ? stringifyEncryptedJson(body.previewSecret) : null
+      body.previewSecret ? stringifyEncryptedJson(body.previewSecret) : null,
+      body.downloadWindowSeconds ?? null
     );
 
     const shareUrl = `/s/${id}`;
@@ -495,7 +510,7 @@ stashRoutes.get('/:id', async (c) => {
 
     const stmt = db.prepare(`
       SELECT id, title, description, file_name, file_size, price_sats, preview_url,
-             generated_preview_payload, preview_proof
+             generated_preview_payload, preview_proof, download_window_seconds
       FROM stashes WHERE id = ?
     `);
 
@@ -510,6 +525,7 @@ stashRoutes.get('/:id', async (c) => {
       | 'preview_url'
       | 'generated_preview_payload'
       | 'preview_proof'
+      | 'download_window_seconds'
     > | null;
 
     if (!stash) {
@@ -533,6 +549,7 @@ stashRoutes.get('/:id', async (c) => {
       previewUrl: stash.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(stash.preview_proof),
+      downloadWindowSeconds: stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS,
     };
 
     return c.json<APIResponse<StashPublicInfo>>({

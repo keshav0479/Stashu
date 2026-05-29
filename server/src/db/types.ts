@@ -25,6 +25,7 @@ export interface StashRow {
   preview_proof: string | null; // encrypted public metadata
   preview_secret: string | null; // encrypted
   show_in_storefront: number;
+  download_window_seconds: number | null; // NULL = use DEFAULT_DOWNLOAD_WINDOW_SECONDS
   created_at: number;
 }
 

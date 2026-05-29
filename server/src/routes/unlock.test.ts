@@ -182,6 +182,7 @@ describe('GET /api/unlock/:id/claim', () => {
     assert.equal(data.blobUrl, TEST_STASH.blobUrl);
     assert.equal(data.fileName, TEST_STASH.fileName);
     assert.deepEqual(data.previewSecret, PREVIEW_SECRET);
+    assert.equal(data.claimExpiresAt, expiresAt);
   });
 
   it('returns 400 when token query param is missing', async () => {

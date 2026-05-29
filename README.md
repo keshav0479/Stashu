@@ -49,7 +49,9 @@ account is required.
 5. **Buyer pays** - either by paying a Lightning invoice or pasting a Cashu ecash
    token.
 6. **Browser unlocks the file** - after payment, the server returns the decryption
-   material, and the buyer browser decrypts and verifies the download locally.
+   material, and the buyer browser decrypts and verifies the download locally. The
+   buyer can re-download on the same device until the seller's re-download window
+   ends.
 
 ## Verified Peek
 
@@ -117,14 +119,15 @@ after a valid unlock.
 
 ### Known Limits
 
-| Limit                  | Details                                                                                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trusted server         | The server currently stores encrypted file keys and decides when to release them after payment.                                                     |
-| Server compromise      | `TOKEN_ENCRYPTION_KEY` is co-located with the database. A root compromise can decrypt encrypted database fields.                                    |
-| Payment custody        | Seller Cashu tokens are held by the server until withdrawal or auto-settlement.                                                                     |
-| Browser key storage    | The seller Nostr private key lives in browser local storage.                                                                                        |
-| Preview privacy        | Verified Peek reveals the selected preview before payment. Stashu uses conservative defaults and limits, but the seller still chooses what to show. |
-| Single mint dependency | The server currently uses one configured Cashu mint through `MINT_URL`.                                                                             |
+| Limit                  | Details                                                                                                                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trusted server         | The server currently stores encrypted file keys and decides when to release them after payment.                                                                                                                       |
+| Server compromise      | `TOKEN_ENCRYPTION_KEY` is co-located with the database. A root compromise can decrypt encrypted database fields.                                                                                                      |
+| Payment custody        | Seller Cashu tokens are held by the server until withdrawal or auto-settlement.                                                                                                                                       |
+| Browser key storage    | The seller Nostr private key lives in browser local storage.                                                                                                                                                          |
+| Preview privacy        | Verified Peek reveals the selected preview before payment. Stashu uses conservative defaults and limits, but the seller still chooses what to show.                                                                   |
+| Single mint dependency | The server currently uses one configured Cashu mint through `MINT_URL`.                                                                                                                                               |
+| Re-download window     | Buyers re-download with a per-device claim token in browser local storage that expires after the seller's window (1-30 days, default 7). It is not a shareable link, so clearing the browser ends re-download access. |
 
 ## Quick Start
 

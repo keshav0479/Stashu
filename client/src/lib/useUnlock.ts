@@ -12,6 +12,7 @@ export type UnlockStatus =
   | 'unlocking'
   | 'decrypting'
   | 'done'
+  | 'expired'
   | 'error';
 
 export interface UnlockState {
@@ -21,6 +22,7 @@ export interface UnlockState {
   downloadUrl: string | null;
   fileName: string | null;
   blobSha256: string | null;
+  claimExpiresAt: number | null;
 }
 
 export function useUnlock(stashId: string) {
@@ -31,6 +33,7 @@ export function useUnlock(stashId: string) {
     downloadUrl: null,
     fileName: null,
     blobSha256: null,
+    claimExpiresAt: null,
   });
 
   const decryptAndFinish = useCallback(
@@ -40,6 +43,7 @@ export function useUnlock(stashId: string) {
       blobSha256?: string;
       fileName?: string;
       previewSecret?: StashProofSecret;
+      claimExpiresAt?: number;
     }) => {
       setState((s) => ({ ...s, status: 'decrypting', error: null }));
 
@@ -70,6 +74,7 @@ export function useUnlock(stashId: string) {
         downloadUrl,
         fileName,
         blobSha256: data.blobSha256 ?? null,
+        claimExpiresAt: data.claimExpiresAt ?? null,
       }));
     },
     [state.stash]
@@ -109,8 +114,14 @@ export function useUnlock(stashId: string) {
       return true;
     } catch (error) {
       const status = (error as Error & { status?: number }).status;
-      if (status === 404 || status === 410) {
-        // Token is invalid or expired — remove it permanently
+      if (status === 410) {
+        // Re-download window ended — keep the token so the expired screen
+        // survives a page refresh (loadStash will re-enter 'claiming' → 'expired').
+        setState((s) => ({ ...s, status: 'expired', error: null }));
+        return false;
+      }
+      if (status === 404) {
+        // Token is unknown/invalid — drop it and fall back to the pay form
         localStorage.removeItem(`stashu-claim-${stashId}`);
       }
       // For transient errors (network, 500), keep the token for next attempt
@@ -122,6 +133,11 @@ export function useUnlock(stashId: string) {
       return false;
     }
   }, [stashId, decryptAndFinish]);
+
+  const payAgain = useCallback(() => {
+    localStorage.removeItem(`stashu-claim-${stashId}`);
+    setState((s) => ({ ...s, status: 'ready', error: null }));
+  }, [stashId]);
 
   const submitToken = useCallback(
     async (token: string) => {
@@ -173,6 +189,7 @@ export function useUnlock(stashId: string) {
       blobSha256?: string;
       fileName?: string;
       claimToken?: string;
+      claimExpiresAt?: number;
       previewSecret?: StashProofSecret;
     }) => {
       try {
@@ -204,6 +221,7 @@ export function useUnlock(stashId: string) {
       downloadUrl: null,
       fileName: null,
       blobSha256: null,
+      claimExpiresAt: null,
     });
   }, [state.downloadUrl]);
 
@@ -214,6 +232,7 @@ export function useUnlock(stashId: string) {
     submitToken,
     submitLightningResult,
     download,
+    payAgain,
     reset,
   };
 }
