@@ -22,6 +22,7 @@ import {
 import { useUnlock } from '../lib/useUnlock';
 import { createPayInvoice, checkPayStatus } from '../lib/api';
 import { verifyGeneratedPreviewBundle } from '../lib/verifiedPreview';
+import { STASH_BLOB_FORMAT } from '../lib/stashPackage';
 import type { StashProofSecret, TextPreviewMetadata } from '../../../shared/types';
 
 type PayTab = 'lightning' | 'cashu';
@@ -76,6 +77,11 @@ export function UnlockPage() {
     };
   }, [unlock.stash?.generatedPreview]);
   const previewProofInvalid = previewVerification.state === 'invalid';
+  const legacyTextPeek =
+    unlock.stash?.generatedPreview?.kind === 'text-peek' &&
+    (unlock.stash.blobFormat !== STASH_BLOB_FORMAT ||
+      unlock.stash.previewProof?.version !== 'stashu-preview-v2' ||
+      unlock.stash.previewProof.sealedBlobSha256 !== unlock.stash.blobSha256);
 
   useEffect(() => {
     if (id) {
@@ -543,25 +549,35 @@ export function UnlockPage() {
               className={`mt-5 rounded-xl border p-4 ${
                 previewVerification.state === 'invalid'
                   ? 'border-rose-500/40 bg-rose-500/10'
-                  : 'border-emerald-500/30 bg-emerald-500/10'
+                  : legacyTextPeek
+                    ? 'border-amber-500/40 bg-amber-500/10'
+                    : 'border-emerald-500/30 bg-emerald-500/10'
               }`}
             >
               <div className="flex items-center gap-2 mb-3">
-                {previewVerification.state === 'invalid' ? (
-                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                {previewVerification.state === 'invalid' || legacyTextPeek ? (
+                  <ShieldAlert
+                    className={`w-4 h-4 ${legacyTextPeek ? 'text-amber-400' : 'text-rose-400'}`}
+                  />
                 ) : (
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 )}
                 <p
                   className={`text-sm font-semibold ${
-                    previewVerification.state === 'invalid' ? 'text-rose-300' : 'text-emerald-300'
+                    previewVerification.state === 'invalid'
+                      ? 'text-rose-300'
+                      : legacyTextPeek
+                        ? 'text-amber-300'
+                        : 'text-emerald-300'
                   }`}
                 >
                   {previewVerification.state === 'invalid'
                     ? 'Stash verification failed'
-                    : previewVerification.text !== undefined
-                      ? 'Verified Peek'
-                      : 'File verification ready'}
+                    : legacyTextPeek
+                      ? 'Legacy Peek'
+                      : previewVerification.text !== undefined
+                        ? 'Verified Peek'
+                        : 'File verification ready'}
                 </p>
               </div>
 
@@ -579,6 +595,12 @@ export function UnlockPage() {
                     <p className="mt-3 text-left text-xs text-slate-500">
                       {previewStats.bytes.toLocaleString()} bytes · {previewStats.percent}% ·{' '}
                       {previewStats.lines} line{previewStats.lines === 1 ? '' : 's'}
+                    </p>
+                  )}
+                  {legacyTextPeek && (
+                    <p className="mt-3 rounded-lg bg-amber-950/40 p-3 text-left text-xs text-amber-100/80">
+                      This older stash checks the preview commitment now and the complete file after
+                      unlock. It does not bind the locked blob before payment.
                     </p>
                   )}
                 </>

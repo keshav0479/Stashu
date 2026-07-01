@@ -17,6 +17,7 @@ import type {
 import { createAuthHeader } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const INVOICE_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Create a new stash on the backend
@@ -161,9 +162,18 @@ export async function executeWithdraw(
  * Create a Lightning invoice for paying for a stash
  */
 export async function createPayInvoice(stashId: string): Promise<PayInvoiceResponse> {
-  const response = await fetch(`${API_BASE}/pay/${stashId}/invoice`, {
-    method: 'POST',
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/pay/${stashId}/invoice`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(INVOICE_REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new Error('Invoice request timed out. Please try again shortly.');
+    }
+    throw error;
+  }
 
   const result: APIResponse<PayInvoiceResponse> = await response.json();
 

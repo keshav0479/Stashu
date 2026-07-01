@@ -75,7 +75,7 @@ function App() {
                 step: 1,
                 icon: <Lock className="w-5 h-5 text-orange-400" />,
                 title: 'Encrypt & Upload',
-                desc: 'Your file is encrypted in-browser before upload. The server never sees it.',
+                desc: 'Hidden file regions are encrypted in-browser. Any preview you choose is intentionally public.',
               },
               {
                 step: 2,
@@ -131,9 +131,7 @@ function App() {
             Support
           </a>
         </div>
-        <p className="text-xs text-slate-600">
-          100% client-side encryption • Your keys, your files
-        </p>
+        <p className="text-xs text-slate-600">Client-side sealing • Your keys, your files</p>
       </footer>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { encryptFile, readFileAsArrayBuffer, toBase64 } from './crypto';
+import { readFileAsArrayBuffer } from './crypto';
 import { uploadToBlossom, getBlossomServer, mirrorToBackupServers } from './blossom';
 import { getPublicKey } from './nostr';
 import { createStash } from './api';
@@ -11,6 +11,7 @@ import {
   type TextLineLimit,
 } from './generatedPreview';
 import { createStashProof } from './stashProof';
+import { createSealedStashPackage, STASH_BLOB_FORMAT } from './stashPackage';
 
 export type StashStatus = 'idle' | 'encrypting' | 'uploading' | 'creating' | 'done' | 'error';
 
@@ -77,20 +78,27 @@ export function useStash() {
               bytes: decodeGeneratedPreviewBytes(generatedPreview),
             }
           : undefined;
+      const sealedPackage = createSealedStashPackage(fileBytes, previewContent);
       const { proof: previewProof, secret: previewSecret } = createStashProof(
         serializeGeneratedPreviewPayload(generatedPreview),
         fileBytes,
         {
           previewContent:
             previewContent && previewContent.bytes.length > 0 ? previewContent : undefined,
+          sealedBlobSha256: sealedPackage.blobSha256,
         }
       );
-      const { ciphertext, nonce, key } = await encryptFile(fileData);
-      const secretKey = `${toBase64(nonce)}:${toBase64(key)}`;
 
       setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
       const selectedServer = getBlossomServer();
-      const uploadResult = await uploadToBlossom(ciphertext, file.type, selectedServer);
+      const uploadResult = await uploadToBlossom(
+        sealedPackage.blob,
+        'application/octet-stream',
+        selectedServer
+      );
+      if (uploadResult.sha256 !== sealedPackage.blobSha256) {
+        throw new Error('Uploaded sealed package hash did not match');
+      }
 
       // Mirror to backup servers for redundancy (fire-and-forget)
       mirrorToBackupServers(uploadResult.sha256, uploadResult.url, selectedServer);
@@ -99,7 +107,8 @@ export function useStash() {
       const stashResult = await createStash({
         blobUrl: uploadResult.url,
         blobSha256: uploadResult.sha256,
-        secretKey,
+        secretKey: sealedPackage.secretKey,
+        blobFormat: STASH_BLOB_FORMAT,
         sellerPubkey: pubkey,
         priceSats: options.priceSats,
         title: options.title,

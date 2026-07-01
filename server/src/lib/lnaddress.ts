@@ -1,16 +1,14 @@
+import { isPrivateOrReservedHostname } from './publicUrl.js';
+
 /**
  * Validate that a domain is a public FQDN — not an IP, localhost, or reserved range.
  * Prevents SSRF via attacker-controlled Lightning addresses.
  */
 function isPublicDomain(domain: string): boolean {
-  // Block IP addresses (v4 and v6)
+  // Block IP addresses (v4 literals; v6 is caught by the shared hostname check)
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return false;
-  if (domain.startsWith('[') || domain.includes(':')) return false;
 
-  // Block localhost and reserved TLDs
-  const blocked = ['localhost', 'local', 'internal', 'intranet', 'corp', 'home', 'lan'];
-  const lower = domain.toLowerCase();
-  if (blocked.some((b) => lower === b || lower.endsWith(`.${b}`))) return false;
+  if (isPrivateOrReservedHostname(domain)) return false;
 
   // Must have at least one dot (real domain)
   if (!domain.includes('.')) return false;

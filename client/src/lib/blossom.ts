@@ -120,14 +120,48 @@ export async function uploadToBlossom(
  * Get file from Blossom server
  * @param url The Blossom blob URL
  */
-export async function fetchFromBlossom(url: string): Promise<Uint8Array> {
+export async function fetchFromBlossom(url: string, maxBytes?: number): Promise<Uint8Array> {
   const response = await fetch(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch from Blossom: ${response.status}`);
   }
 
+  const declaredLength = response.headers?.get('content-length');
+  if (maxBytes !== undefined && declaredLength && Number(declaredLength) > maxBytes) {
+    throw new Error('Downloaded blob exceeds the allowed size');
+  }
+
+  if (maxBytes !== undefined && response.body) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalLength = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      totalLength += value.length;
+      if (totalLength > maxBytes) {
+        await reader.cancel();
+        throw new Error('Downloaded blob exceeds the allowed size');
+      }
+      chunks.push(value);
+    }
+
+    const blob = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      blob.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return blob;
+  }
+
   const buffer = await response.arrayBuffer();
+  if (maxBytes !== undefined && buffer.byteLength > maxBytes) {
+    throw new Error('Downloaded blob exceeds the allowed size');
+  }
   return new Uint8Array(buffer);
 }
 
@@ -183,23 +217,41 @@ export function mirrorToBackupServers(
  */
 export async function fetchFromBlossomWithFallback(
   primaryUrl: string,
-  blobSha256: string | null | undefined
+  blobSha256: string | null | undefined,
+  maxBytes?: number
 ): Promise<Uint8Array> {
+  const fetchVerified = async (url: string) => {
+    const blob = await fetchFromBlossom(url, maxBytes);
+    if (blobSha256 && sha256(blob) !== blobSha256) {
+      throw new Error('Downloaded blob hash did not match its Blossom address');
+    }
+    return blob;
+  };
+
   // Try primary first
   try {
-    return await fetchFromBlossom(primaryUrl);
+    return await fetchVerified(primaryUrl);
   } catch (primaryError) {
     if (!blobSha256) throw primaryError;
+    let lastError = primaryError;
 
     // Try each mirror server
     for (const server of MIRROR_SERVERS) {
       try {
         const fallbackUrl = `${server}/${blobSha256}`;
         if (fallbackUrl === primaryUrl) continue;
-        return await fetchFromBlossom(fallbackUrl);
-      } catch {
+        return await fetchVerified(fallbackUrl);
+      } catch (error) {
+        lastError = error;
         continue;
       }
+    }
+
+    if (
+      lastError instanceof Error &&
+      /hash did not match|exceeds the allowed size/i.test(lastError.message)
+    ) {
+      throw lastError;
     }
 
     throw new Error(

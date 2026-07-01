@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
+import { sealedStashFields } from '../lib/sealedBlob.js';
 import type {
   GeneratedPreviewPayload,
   StashProof,
@@ -56,8 +57,9 @@ sellerRoutes.get('/:pubkey', async (c) => {
     }
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, preview_url,
-             generated_preview_payload, preview_proof, download_window_seconds, created_at
+      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
+             blob_format, preview_url, generated_preview_payload, preview_proof,
+             download_window_seconds, created_at
       FROM stashes
       WHERE seller_pubkey = ? AND show_in_storefront = 1
       ORDER BY created_at DESC
@@ -71,6 +73,9 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'file_name'
       | 'file_size'
       | 'price_sats'
+      | 'blob_url'
+      | 'blob_sha256'
+      | 'blob_format'
       | 'preview_url'
       | 'generated_preview_payload'
       | 'preview_proof'
@@ -85,6 +90,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileName: decrypt(row.file_name),
       fileSize: row.file_size,
       priceSats: row.price_sats,
+      ...sealedStashFields(row),
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(row.preview_proof),

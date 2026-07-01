@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
+import { isPrivateOrReservedHostname } from '../lib/publicUrl.js';
+import { SEALED_BLOB_FORMAT, sealedStashFields } from '../lib/sealedBlob.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
   CreateStashRequest,
@@ -22,6 +24,7 @@ export const stashRoutes = new Hono<{ Variables: AuthVariables }>();
 
 const HASH_RE = /^[0-9a-f]{64}$/;
 const BASE64URL_RE = /^[A-Za-z0-9_-]*$/;
+const SEALED_SECRET_KEY_RE = /^stashu-selective-v1:[A-Za-z0-9+/]{43}=$/;
 const MAX_PREVIEW_PAYLOAD_JSON_LENGTH = 64 * 1024;
 const MAX_PREVIEW_BASE64URL_LENGTH = 64 * 1024;
 const MAX_PREVIEW_CONTENT_BYTES = 16 * 1024;
@@ -44,6 +47,16 @@ function isPositiveInteger(value: unknown, max = Number.MAX_SAFE_INTEGER): value
 
 function isHash(value: unknown): value is string {
   return typeof value === 'string' && HASH_RE.test(value);
+}
+
+function isSafePublicBlobUrl(url: URL): boolean {
+  if (url.username || url.password) return false;
+  if (process.env.ALLOW_INSECURE_BLOSSOM_URLS === '1') {
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  }
+  if (url.protocol !== 'https:') return false;
+
+  return !isPrivateOrReservedHostname(url.hostname);
 }
 
 function base64UrlDecodedLength(value: string): number | null {
@@ -120,18 +133,21 @@ function isStashProof(value: unknown): value is StashProof {
     'contentMerkleRoot',
     'contentLength',
     'chunkSize',
+    'sealedBlobSha256',
     'previewInclusion',
   ];
 
   return (
     hasOnlyKeys(value, keys) &&
-    value.version === 'stashu-preview-v1' &&
+    (value.version === 'stashu-preview-v1' || value.version === 'stashu-preview-v2') &&
     isHash(value.root) &&
     isHash(value.previewHash) &&
     isHash(value.contentMerkleRoot) &&
     isPositiveInteger(value.contentLength, 100 * 1024 * 1024) &&
     isPositiveInteger(value.chunkSize, 1024 * 1024) &&
     (value.chunkSize as number) >= 1024 &&
+    ((value.version === 'stashu-preview-v1' && value.sealedBlobSha256 === undefined) ||
+      (value.version === 'stashu-preview-v2' && isHash(value.sealedBlobSha256))) &&
     (value.previewInclusion === undefined || isPreviewInclusionProof(value.previewInclusion))
   );
 }
@@ -261,7 +277,11 @@ function validatePreviewBundle(body: CreateStashRequest): string | null {
   const fields = [body.generatedPreview, body.previewProof, body.previewSecret];
   const provided = fields.filter((field) => field !== undefined && field !== null).length;
 
-  if (provided === 0) return null;
+  if (provided === 0) {
+    return body.blobFormat === SEALED_BLOB_FORMAT
+      ? 'sealed stash packages require generated preview proof fields'
+      : null;
+  }
   if (provided !== fields.length) {
     return 'generatedPreview, previewProof, and previewSecret must be provided together';
   }
@@ -282,7 +302,25 @@ function validatePreviewBundle(body: CreateStashRequest): string | null {
     return 'previewProof content length must match fileSize';
   }
 
+  if (body.blobFormat === SEALED_BLOB_FORMAT) {
+    if (!body.blobSha256) {
+      return 'sealed stash packages require blobSha256';
+    }
+    if (
+      body.previewProof.version !== 'stashu-preview-v2' ||
+      body.previewProof.sealedBlobSha256 !== body.blobSha256
+    ) {
+      return 'sealed stash package hash must match previewProof';
+    }
+  } else if (body.previewProof.version === 'stashu-preview-v2') {
+    return 'stashu-preview-v2 proofs require a sealed stash package';
+  }
+
   if (body.generatedPreview.kind === 'text-peek') {
+    if (body.blobFormat !== SEALED_BLOB_FORMAT) {
+      return 'text previews require a sealed stash package';
+    }
+
     const { offset, previewBytes } = body.generatedPreview.metadata as {
       offset: number;
       previewBytes: number;
@@ -332,8 +370,9 @@ stashRoutes.post('/', async (c) => {
     }
 
     // Validate blobUrl is a valid URL
+    let blobUrl: URL;
     try {
-      new URL(body.blobUrl);
+      blobUrl = new URL(body.blobUrl);
     } catch {
       return c.json<APIResponse<never>>({ success: false, error: 'Invalid blobUrl' }, 400);
     }
@@ -376,6 +415,22 @@ stashRoutes.post('/', async (c) => {
       );
     }
 
+    if (body.blobFormat !== undefined && body.blobFormat !== SEALED_BLOB_FORMAT) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid blobFormat' }, 400);
+    }
+    if (body.blobFormat === SEALED_BLOB_FORMAT && !isSafePublicBlobUrl(blobUrl)) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'Sealed stash blobUrl must be a public HTTPS URL' },
+        400
+      );
+    }
+    if (body.blobFormat === SEALED_BLOB_FORMAT && !SEALED_SECRET_KEY_RE.test(body.secretKey)) {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'Invalid sealed stash secretKey' },
+        400
+      );
+    }
+
     if (
       body.downloadWindowSeconds !== undefined &&
       !ALLOWED_DOWNLOAD_WINDOW_SECONDS.has(body.downloadWindowSeconds)
@@ -396,10 +451,10 @@ stashRoutes.post('/', async (c) => {
     const stmt = db.prepare(`
       INSERT INTO stashes (
         id, blob_url, blob_sha256, secret_key, seller_pubkey, price_sats,
-        title, description, file_name, file_size, preview_url,
+        title, description, file_name, file_size, blob_format, preview_url,
         generated_preview_payload, preview_proof, preview_secret, download_window_seconds
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -413,6 +468,7 @@ stashRoutes.post('/', async (c) => {
       body.description ? encrypt(body.description) : null,
       encrypt(body.fileName),
       body.fileSize,
+      body.blobFormat || null,
       body.previewUrl || null,
       body.generatedPreview ? stringifyEncryptedJson(body.generatedPreview) : null,
       body.previewProof ? stringifyEncryptedJson(body.previewProof) : null,
@@ -509,8 +565,9 @@ stashRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, preview_url,
-             generated_preview_payload, preview_proof, download_window_seconds
+      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
+             blob_format, preview_url, generated_preview_payload, preview_proof,
+             download_window_seconds
       FROM stashes WHERE id = ?
     `);
 
@@ -522,6 +579,9 @@ stashRoutes.get('/:id', async (c) => {
       | 'file_name'
       | 'file_size'
       | 'price_sats'
+      | 'blob_url'
+      | 'blob_sha256'
+      | 'blob_format'
       | 'preview_url'
       | 'generated_preview_payload'
       | 'preview_proof'
@@ -546,6 +606,7 @@ stashRoutes.get('/:id', async (c) => {
       fileName: decrypt(stash.file_name),
       fileSize: stash.file_size,
       priceSats: stash.price_sats,
+      ...sealedStashFields(stash),
       previewUrl: stash.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(stash.preview_proof),
