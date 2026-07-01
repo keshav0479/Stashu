@@ -8,8 +8,10 @@ import { createStashProof } from './stashProof.js';
 import {
   decodeTextPreview,
   verifyGeneratedPreviewBundle,
+  verifySealedStashPackageBundle,
   verifyUnlockedStashFile,
 } from './verifiedPreview.js';
+import { createSealedStashPackage, STASH_BLOB_FORMAT } from './stashPackage.js';
 
 const encoder = new TextEncoder();
 
@@ -141,5 +143,78 @@ describe('verified preview helpers', () => {
     );
 
     expect(decodeTextPreview(preview)).toBe('he');
+  });
+
+  it('verifies that a v2 public peek is a literal segment of the fetched sealed package', () => {
+    const content = bytes('intro\nsafe excerpt\npaid-only ending');
+    const offset = bytes('intro\n').length;
+    const preview = generatePreviewFromBytes(
+      {
+        fileName: 'prompt.md',
+        fileType: 'text/markdown',
+        fileSize: content.length,
+        content,
+      },
+      {
+        mode: 'excerpt',
+        excerpt: { offset, text: 'safe excerpt' },
+        maxPreviewRatio: 0.5,
+      }
+    );
+    const previewRange = { offset, bytes: decodeGeneratedPreviewBytes(preview) };
+    const sealed = createSealedStashPackage(content, previewRange);
+    const { proof } = createStashProof(serializeGeneratedPreviewPayload(preview), content, {
+      previewContent: previewRange,
+      sealedBlobSha256: sealed.blobSha256,
+    });
+
+    expect(
+      verifySealedStashPackageBundle(
+        {
+          blobFormat: STASH_BLOB_FORMAT,
+          blobSha256: sealed.blobSha256,
+          generatedPreview: preview,
+          previewProof: proof,
+        },
+        sealed.blob
+      )
+    ).toBe(true);
+  });
+
+  it('rejects a swapped v2 package before payment even when the public text is identical', () => {
+    const promised = bytes('same excerpt\npromised hidden');
+    const swapped = bytes('same excerpt\nswapped hidden!');
+    const preview = generatePreviewFromBytes(
+      {
+        fileName: 'prompt.md',
+        fileType: 'text/markdown',
+        fileSize: promised.length,
+        content: promised,
+      },
+      {
+        mode: 'excerpt',
+        excerpt: { offset: 0, text: 'same excerpt' },
+        maxPreviewRatio: 0.5,
+      }
+    );
+    const previewRange = { offset: 0, bytes: decodeGeneratedPreviewBytes(preview) };
+    const promisedPackage = createSealedStashPackage(promised, previewRange);
+    const swappedPackage = createSealedStashPackage(swapped, previewRange);
+    const { proof } = createStashProof(serializeGeneratedPreviewPayload(preview), promised, {
+      previewContent: previewRange,
+      sealedBlobSha256: promisedPackage.blobSha256,
+    });
+
+    expect(
+      verifySealedStashPackageBundle(
+        {
+          blobFormat: STASH_BLOB_FORMAT,
+          blobSha256: promisedPackage.blobSha256,
+          generatedPreview: preview,
+          previewProof: proof,
+        },
+        swappedPackage.blob
+      )
+    ).toBe(false);
   });
 });

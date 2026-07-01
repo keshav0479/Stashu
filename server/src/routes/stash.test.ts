@@ -71,6 +71,22 @@ function validPreviewBundle(body = validBody()) {
   };
 }
 
+function validSealedPreviewBundle(body = validBody()) {
+  const bundle = validPreviewBundle(body);
+  const blobSha256 = 'e'.repeat(64);
+  return {
+    blobFormat: 'stashu-selective-v1',
+    blobSha256,
+    secretKey: `stashu-selective-v1:${'A'.repeat(43)}=`,
+    ...bundle,
+    previewProof: {
+      ...bundle.previewProof,
+      version: 'stashu-preview-v2',
+      sealedBlobSha256: blobSha256,
+    },
+  };
+}
+
 function base64Url(value: string) {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
@@ -200,6 +216,85 @@ describe('POST /api/stash', () => {
     assert.deepEqual(JSON.parse(decrypt(row.preview_secret)), input.previewSecret);
   });
 
+  it('stores a sealed package only when its v2 proof binds the blob hash', async () => {
+    const input = { ...validBody(), ...validSealedPreviewBundle() };
+    const res = await createStash(input);
+    assert.equal(res.status, 201);
+    const { data } = await res.json();
+
+    const row = db.prepare('SELECT blob_format FROM stashes WHERE id = ?').get(data.id) as {
+      blob_format: string;
+    };
+    assert.equal(row.blob_format, 'stashu-selective-v1');
+  });
+
+  it('rejects a sealed package whose v2 proof binds a different blob hash', async () => {
+    const bundle = validSealedPreviewBundle();
+    const res = await createStash({
+      ...validBody(),
+      ...bundle,
+      blobSha256: 'f'.repeat(64),
+    });
+
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /hash/i);
+  });
+
+  it('rejects a sealed package without generated preview proof fields', async () => {
+    const res = await createStash({
+      ...validBody(),
+      blobFormat: 'stashu-selective-v1',
+      blobSha256: 'e'.repeat(64),
+      secretKey: `stashu-selective-v1:${'A'.repeat(43)}=`,
+    });
+
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /proof/i);
+  });
+
+  it('rejects a sealed package with a malformed package key', async () => {
+    const res = await createStash({
+      ...validBody(),
+      ...validSealedPreviewBundle(),
+      secretKey: 'not-a-sealed-key',
+    });
+
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /secretKey/i);
+  });
+
+  it('rejects a sealed package URL that could trigger a local-network fetch', async () => {
+    const res = await createStash({
+      ...validBody(),
+      ...validSealedPreviewBundle(),
+      blobUrl: 'http://127.0.0.1/private-service',
+    });
+
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /public HTTPS/i);
+  });
+
+  it('allows local sealed package URLs only with an explicit development opt-in', async () => {
+    const original = process.env.ALLOW_INSECURE_BLOSSOM_URLS;
+    process.env.ALLOW_INSECURE_BLOSSOM_URLS = '1';
+
+    try {
+      const res = await createStash({
+        ...validBody(),
+        ...validSealedPreviewBundle(),
+        blobUrl: 'http://127.0.0.1:3001/local-blob',
+      });
+
+      assert.equal(res.status, 201);
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_INSECURE_BLOSSOM_URLS;
+      } else {
+        process.env.ALLOW_INSECURE_BLOSSOM_URLS = original;
+      }
+    }
+  });
+
   it('rejects partial preview bundles', async () => {
     const res = await createStash({
       ...validBody(),
@@ -222,7 +317,7 @@ describe('POST /api/stash', () => {
 
   it('requires inclusion proof for text previews', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -257,7 +352,7 @@ describe('POST /api/stash', () => {
 
   it('rejects text preview metadata that does not match preview bytes', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -302,7 +397,7 @@ describe('POST /api/stash', () => {
 
   it('rejects text previews above the declared preview ratio', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -347,7 +442,7 @@ describe('POST /api/stash', () => {
 
   it('rejects text preview ratios above the server cap', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -392,7 +487,7 @@ describe('POST /api/stash', () => {
 
   it('accepts text previews with matching inclusion proof metadata', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -434,9 +529,54 @@ describe('POST /api/stash', () => {
     assert.equal(res.status, 201);
   });
 
+  it('rejects fresh legacy v1 text previews that bypass sealed prepayment verification', async () => {
+    const body = validBody();
+    const bundle = validPreviewBundle(body);
+    const res = await createStash({
+      ...body,
+      ...bundle,
+      generatedPreview: {
+        version: 'stashu-generated-preview-v1',
+        kind: 'text-peek',
+        fileName: body.fileName,
+        fileType: 'text/plain',
+        fileSize: body.fileSize,
+        contentType: 'text/plain; charset=utf-8',
+        options: {
+          mode: 'auto',
+          lineLimit: 10,
+          maxBytes: 16_384,
+          maxChars: 4_000,
+          maxPreviewRatio: 0.15,
+        },
+        metadata: {
+          offset: 0,
+          lineLimit: 10,
+          linesIncluded: 1,
+          bytesRead: 7,
+          previewBytes: 7,
+          truncated: true,
+        },
+        bytes: 'cHJldmlldw',
+      },
+      previewProof: {
+        ...bundle.previewProof,
+        previewInclusion: {
+          offset: 0,
+          length: 7,
+          leafHash: 'e'.repeat(64),
+          path: [],
+        },
+      },
+    });
+
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /sealed stash package/i);
+  });
+
   it('rejects text previews whose bytes exceed the declared line limit', async () => {
     const body = { ...validBody(), fileName: 'notes.md', fileSize: 1024 };
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const previewText = Array.from({ length: 11 }, (_, index) => `line ${index + 1}`).join('\n');
     const previewBytes = Buffer.byteLength(previewText, 'utf8');
     const res = await createStash({
@@ -483,7 +623,7 @@ describe('POST /api/stash', () => {
 
   it('accepts seller-picked excerpt previews with a non-zero offset', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -527,7 +667,7 @@ describe('POST /api/stash', () => {
 
   it('rejects preview proof offsets that do not match generated preview metadata', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -572,7 +712,7 @@ describe('POST /api/stash', () => {
 
   it('rejects oversized preview inclusion paths', async () => {
     const body = validBody();
-    const bundle = validPreviewBundle(body);
+    const bundle = validSealedPreviewBundle(body);
     const res = await createStash({
       ...body,
       ...bundle,
@@ -726,5 +866,19 @@ describe('GET /api/stash/:id', () => {
     assert.deepEqual(data.generatedPreview, input.generatedPreview);
     assert.deepEqual(data.previewProof, input.previewProof);
     assert.equal(data.previewSecret, undefined);
+  });
+
+  it('returns the public sealed package locator for prepayment verification', async () => {
+    const input = { ...validBody(), ...validSealedPreviewBundle() };
+    const createRes = await createStash(input);
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}`);
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+
+    assert.equal(data.blobFormat, 'stashu-selective-v1');
+    assert.equal(data.sealedBlobUrl, input.blobUrl);
+    assert.equal(data.blobSha256, input.blobSha256);
   });
 });

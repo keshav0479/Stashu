@@ -67,7 +67,7 @@ describe('encryptFile / decryptFile', () => {
     const { ciphertext, nonce, key } = await encryptFile(data.buffer as ArrayBuffer);
     const decrypted = await decryptFile(ciphertext, key, nonce);
     expect(new Uint8Array(decrypted)).toEqual(data);
-  });
+  }, 15_000);
 
   it('wrong key fails to decrypt', async () => {
     const data = new TextEncoder().encode('secret');

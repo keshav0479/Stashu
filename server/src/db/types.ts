@@ -20,6 +20,7 @@ export interface StashRow {
   description: string | null; // encrypted
   file_name: string; // encrypted
   file_size: number;
+  blob_format: string | null;
   preview_url: string | null;
   generated_preview_payload: string | null; // encrypted public metadata
   preview_proof: string | null; // encrypted public metadata

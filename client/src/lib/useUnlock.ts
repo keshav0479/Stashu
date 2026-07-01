@@ -1,8 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { getStashInfo, unlockStash, claimStash } from './api';
 import { decryptFile, fromBase64 } from './crypto';
 import { fetchFromBlossomWithFallback } from './blossom';
-import { verifyUnlockedStashFile } from './verifiedPreview';
+import { verifySealedStashPackageBundle, verifyUnlockedStashFile } from './verifiedPreview';
+import {
+  decryptSealedStashPackage,
+  isSealedStashSecretKey,
+  MAX_SEALED_PACKAGE_OVERHEAD,
+  STASH_BLOB_FORMAT,
+} from './stashPackage';
 import type { StashProofSecret, StashPublicInfo } from '../../../shared/types';
 
 export type UnlockStatus =
@@ -26,6 +32,7 @@ export interface UnlockState {
 }
 
 export function useUnlock(stashId: string) {
+  const sealedPackageRef = useRef<Uint8Array | null>(null);
   const [state, setState] = useState<UnlockState>({
     status: 'loading',
     stash: null,
@@ -47,16 +54,16 @@ export function useUnlock(stashId: string) {
     }) => {
       setState((s) => ({ ...s, status: 'decrypting', error: null }));
 
-      const ciphertext = await fetchFromBlossomWithFallback(data.blobUrl, data.blobSha256);
-
-      const [nonceB64, keyB64] = data.secretKey.split(':');
-      if (!nonceB64 || !keyB64) {
-        throw new Error('Invalid secret key format');
-      }
-      const nonce = fromBase64(nonceB64);
-      const key = fromBase64(keyB64);
-
-      const plaintext = await decryptFile(ciphertext, key, nonce);
+      const sealedBlob =
+        sealedPackageRef.current ??
+        (await fetchFromBlossomWithFallback(
+          data.blobUrl,
+          data.blobSha256,
+          state.stash ? state.stash.fileSize + MAX_SEALED_PACKAGE_OVERHEAD : undefined
+        ));
+      const plaintext = isSealedStashSecretKey(data.secretKey)
+        ? decryptSealedStashPackage(sealedBlob, data.secretKey, data.blobSha256)
+        : await decryptLegacyFile(sealedBlob, data.secretKey);
       if (
         state.stash?.previewProof &&
         !verifyUnlockedStashFile(state.stash, plaintext, data.previewSecret)
@@ -91,6 +98,21 @@ export function useUnlock(stashId: string) {
         blobSha256: null,
       }));
       const stash = await getStashInfo(stashId);
+      sealedPackageRef.current = null;
+      if (stash.blobFormat === STASH_BLOB_FORMAT && stash.generatedPreview?.kind === 'text-peek') {
+        if (!stash.sealedBlobUrl || !stash.blobSha256) {
+          throw new Error('Sealed stash package metadata is missing');
+        }
+        const sealedPackage = await fetchFromBlossomWithFallback(
+          stash.sealedBlobUrl,
+          stash.blobSha256,
+          stash.fileSize + MAX_SEALED_PACKAGE_OVERHEAD
+        );
+        if (!verifySealedStashPackageBundle(stash, sealedPackage)) {
+          throw new Error('Sealed stash package verification failed');
+        }
+        sealedPackageRef.current = sealedPackage;
+      }
       // If a claim token exists, go straight to 'claiming' to avoid flashing payment UI
       const hasClaimToken = !!localStorage.getItem(`stashu-claim-${stashId}`);
       setState((s) => ({ ...s, status: hasClaimToken ? 'claiming' : 'ready', stash }));
@@ -214,6 +236,7 @@ export function useUnlock(stashId: string) {
     if (state.downloadUrl) {
       URL.revokeObjectURL(state.downloadUrl);
     }
+    sealedPackageRef.current = null;
     setState({
       status: 'loading',
       stash: null,
@@ -235,4 +258,13 @@ export function useUnlock(stashId: string) {
     payAgain,
     reset,
   };
+}
+
+async function decryptLegacyFile(ciphertext: Uint8Array, secretKey: string): Promise<ArrayBuffer> {
+  const [nonceB64, keyB64] = secretKey.split(':');
+  if (!nonceB64 || !keyB64) {
+    throw new Error('Invalid secret key format');
+  }
+
+  return decryptFile(ciphertext, fromBase64(keyB64), fromBase64(nonceB64));
 }

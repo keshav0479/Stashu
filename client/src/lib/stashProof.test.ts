@@ -5,6 +5,7 @@ import {
   verifyPreviewInclusion,
   verifyUnlockedFile,
 } from './stashProof.js';
+import { decryptFile, encryptFile } from './crypto.js';
 
 const encoder = new TextEncoder();
 
@@ -172,5 +173,34 @@ describe('stash proof commitments', () => {
     const { proof } = createStashProof(bytes('public preview'), bytes('hidden file'));
 
     expect(verifyUnlockedFile(bytes('hidden file'), proof, {})).toBe(false);
+  });
+
+  it('documents the v1 boundary: a detached ciphertext mismatch is caught only after unlock', async () => {
+    const promised = bytes('public peek\npromised hidden text');
+    const delivered = bytes('different file encrypted by a custom seller');
+    const preview = bytes('public peek');
+    const { proof, secret } = createStashProof(bytes('preview payload'), promised, {
+      previewContent: preview,
+    });
+    const { ciphertext, nonce, key } = await encryptFile(delivered.buffer as ArrayBuffer);
+    const decrypted = await decryptFile(ciphertext, key, nonce);
+
+    expect(verifyPreviewInclusion(preview, proof)).toBe(true);
+    expect(verifyUnlockedFile(decrypted, proof, secret)).toBe(false);
+  });
+
+  it('binds v2 proofs to a sealed blob hash', () => {
+    const sealedBlobSha256 = 'a'.repeat(64);
+    const { proof } = createStashProof(bytes('preview payload'), bytes('public peek\nhidden'), {
+      previewContent: bytes('public peek'),
+      sealedBlobSha256,
+    });
+
+    expect(proof.version).toBe('stashu-preview-v2');
+    expect(proof.sealedBlobSha256).toBe(sealedBlobSha256);
+    expect(verifyPreview(bytes('preview payload'), proof)).toBe(true);
+    expect(
+      verifyPreview(bytes('preview payload'), { ...proof, sealedBlobSha256: 'b'.repeat(64) })
+    ).toBe(false);
   });
 });

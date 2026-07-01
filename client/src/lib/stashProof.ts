@@ -1,6 +1,7 @@
 import { bytesToHex, sha256 } from './crypto.js';
 
 export const STASH_PROOF_VERSION = 'stashu-preview-v1' as const;
+export const SEALED_STASH_PROOF_VERSION = 'stashu-preview-v2' as const;
 export const DEFAULT_CONTENT_CHUNK_SIZE = 64 * 1024;
 
 const SALT_LENGTH = 32;
@@ -20,12 +21,13 @@ export interface PreviewInclusionProof {
 }
 
 export interface StashProof {
-  version: typeof STASH_PROOF_VERSION;
+  version: typeof STASH_PROOF_VERSION | typeof SEALED_STASH_PROOF_VERSION;
   root: string;
   previewHash: string;
   contentMerkleRoot: string;
   contentLength: number;
   chunkSize: number;
+  sealedBlobSha256?: string;
   previewInclusion?: PreviewInclusionProof;
 }
 
@@ -42,6 +44,7 @@ export interface CreateStashProofOptions {
   salt?: Uint8Array;
   previewContent?: Uint8Array | ArrayBuffer | PreviewContentRange;
   chunkSize?: number;
+  sealedBlobSha256?: string;
 }
 
 export interface PreviewContentRange {
@@ -121,20 +124,29 @@ function uint64Bytes(value: number): Uint8Array {
   return bytes;
 }
 
-function previewLeaf(previewPayload: Uint8Array): string {
-  return taggedHash(`${STASH_PROOF_VERSION}:preview`, [previewPayload]);
+function previewLeaf(version: StashProof['version'], previewPayload: Uint8Array): string {
+  return taggedHash(`${version}:preview`, [previewPayload]);
 }
 
-function publicContentLeaf(offset: number, content: Uint8Array): string {
-  return taggedHash(`${STASH_PROOF_VERSION}:content-leaf-public`, [
+function publicContentLeaf(
+  version: StashProof['version'],
+  offset: number,
+  content: Uint8Array
+): string {
+  return taggedHash(`${version}:content-leaf-public`, [
     uint64Bytes(offset),
     uint32Bytes(content.length),
     content,
   ]);
 }
 
-function privateContentLeaf(offset: number, content: Uint8Array, salt: Uint8Array): string {
-  return taggedHash(`${STASH_PROOF_VERSION}:content-leaf-private`, [
+function privateContentLeaf(
+  version: StashProof['version'],
+  offset: number,
+  content: Uint8Array,
+  salt: Uint8Array
+): string {
+  return taggedHash(`${version}:content-leaf-private`, [
     uint64Bytes(offset),
     uint32Bytes(content.length),
     salt,
@@ -142,18 +154,25 @@ function privateContentLeaf(offset: number, content: Uint8Array, salt: Uint8Arra
   ]);
 }
 
-function merkleParent(left: string, right: string): string {
-  return taggedHash(`${STASH_PROOF_VERSION}:merkle-parent`, [
-    hashToBytes(left),
-    hashToBytes(right),
-  ]);
+function merkleParent(version: StashProof['version'], left: string, right: string): string {
+  return taggedHash(`${version}:merkle-parent`, [hashToBytes(left), hashToBytes(right)]);
 }
 
-function rootHash(previewHash: string, contentMerkleRoot: string): string {
-  return taggedHash(`${STASH_PROOF_VERSION}:root`, [
-    hashToBytes(previewHash),
-    hashToBytes(contentMerkleRoot),
-  ]);
+function rootHash(
+  version: StashProof['version'],
+  previewHash: string,
+  contentMerkleRoot: string,
+  sealedBlobSha256?: string
+): string {
+  const parts = [hashToBytes(previewHash), hashToBytes(contentMerkleRoot)];
+  if (version === SEALED_STASH_PROOF_VERSION) {
+    if (!sealedBlobSha256 || !isHash(sealedBlobSha256)) {
+      throw new Error('Sealed stash proof requires a valid blob hash');
+    }
+    parts.push(hashToBytes(sealedBlobSha256));
+  }
+
+  return taggedHash(`${version}:root`, parts);
 }
 
 function validateChunkSize(chunkSize: number): void {
@@ -200,6 +219,7 @@ function normalizePreviewRange(
 }
 
 function contentLeaves(
+  version: StashProof['version'],
   content: Uint8Array,
   salt: Uint8Array,
   previewRange: { offset: number; bytes: Uint8Array } | undefined,
@@ -212,7 +232,7 @@ function contentLeaves(
     let offset = start;
     while (offset < end) {
       const nextOffset = Math.min(offset + chunkSize, end);
-      leaves.push(privateContentLeaf(offset, content.slice(offset, nextOffset), salt));
+      leaves.push(privateContentLeaf(version, offset, content.slice(offset, nextOffset), salt));
       offset = nextOffset;
     }
   };
@@ -220,20 +240,20 @@ function contentLeaves(
   if (previewRange) {
     addPrivateLeaves(0, previewRange.offset);
     previewLeafIndex = leaves.length;
-    leaves.push(publicContentLeaf(previewRange.offset, previewRange.bytes));
+    leaves.push(publicContentLeaf(version, previewRange.offset, previewRange.bytes));
     addPrivateLeaves(previewRange.offset + previewRange.bytes.length, content.length);
   } else {
     addPrivateLeaves(0, content.length);
   }
 
   if (leaves.length === 0) {
-    leaves.push(privateContentLeaf(0, new Uint8Array(), salt));
+    leaves.push(privateContentLeaf(version, 0, new Uint8Array(), salt));
   }
 
   return { leaves, previewLeafIndex };
 }
 
-function merkleRoot(leaves: string[]): string {
+function merkleRoot(version: StashProof['version'], leaves: string[]): string {
   let level = leaves;
 
   while (level.length > 1) {
@@ -243,7 +263,7 @@ function merkleRoot(leaves: string[]): string {
       if (i + 1 >= level.length) {
         nextLevel.push(level[i]);
       } else {
-        nextLevel.push(merkleParent(level[i], level[i + 1]));
+        nextLevel.push(merkleParent(version, level[i], level[i + 1]));
       }
     }
 
@@ -253,7 +273,11 @@ function merkleRoot(leaves: string[]): string {
   return level[0];
 }
 
-function merklePath(leaves: string[], leafIndex: number): MerkleProofStep[] {
+function merklePath(
+  version: StashProof['version'],
+  leaves: string[],
+  leafIndex: number
+): MerkleProofStep[] {
   const path: MerkleProofStep[] = [];
   let level = leaves;
   let index = leafIndex;
@@ -274,7 +298,7 @@ function merklePath(leaves: string[], leafIndex: number): MerkleProofStep[] {
       if (i + 1 >= level.length) {
         nextLevel.push(level[i]);
       } else {
-        nextLevel.push(merkleParent(level[i], level[i + 1]));
+        nextLevel.push(merkleParent(version, level[i], level[i + 1]));
       }
     }
 
@@ -285,12 +309,19 @@ function merklePath(leaves: string[], leafIndex: number): MerkleProofStep[] {
   return path;
 }
 
-function verifyMerklePath(leafHash: string, path: MerkleProofStep[], root: string): boolean {
+function verifyMerklePath(
+  version: StashProof['version'],
+  leafHash: string,
+  path: MerkleProofStep[],
+  root: string
+): boolean {
   let current = leafHash;
 
   for (const step of path) {
     current =
-      step.side === 'left' ? merkleParent(step.hash, current) : merkleParent(current, step.hash);
+      step.side === 'left'
+        ? merkleParent(version, step.hash, current)
+        : merkleParent(version, current, step.hash);
   }
 
   return current === root;
@@ -306,7 +337,7 @@ function isPreviewInclusionProof(value: unknown): value is PreviewInclusionProof
   return (
     Number.isSafeInteger(value.offset) &&
     (value.offset as number) >= 0 &&
-    Number.isInteger(value.length) &&
+    Number.isSafeInteger(value.length) &&
     (value.length as number) > 0 &&
     typeof value.leafHash === 'string' &&
     isHash(value.leafHash) &&
@@ -325,16 +356,20 @@ function isProofShape(proof: unknown): proof is StashProof {
   if (!isRecord(proof)) return false;
 
   return (
-    proof.version === STASH_PROOF_VERSION &&
+    (proof.version === STASH_PROOF_VERSION || proof.version === SEALED_STASH_PROOF_VERSION) &&
     typeof proof.previewHash === 'string' &&
     typeof proof.contentMerkleRoot === 'string' &&
     typeof proof.root === 'string' &&
-    Number.isInteger(proof.contentLength) &&
+    Number.isSafeInteger(proof.contentLength) &&
     (proof.contentLength as number) >= 0 &&
-    Number.isInteger(proof.chunkSize) &&
+    Number.isSafeInteger(proof.chunkSize) &&
     isHash(proof.previewHash) &&
     isHash(proof.contentMerkleRoot) &&
     isHash(proof.root) &&
+    ((proof.version === STASH_PROOF_VERSION && proof.sealedBlobSha256 === undefined) ||
+      (proof.version === SEALED_STASH_PROOF_VERSION &&
+        typeof proof.sealedBlobSha256 === 'string' &&
+        isHash(proof.sealedBlobSha256))) &&
     (proof.previewInclusion === undefined || isPreviewInclusionProof(proof.previewInclusion))
   );
 }
@@ -353,29 +388,40 @@ export function createStashProof(
   validateChunkSize(chunkSize);
 
   const contentBytes = toBytes(content);
+  const version = options.sealedBlobSha256 ? SEALED_STASH_PROOF_VERSION : STASH_PROOF_VERSION;
+  if (options.sealedBlobSha256 && !isHash(options.sealedBlobSha256)) {
+    throw new Error('Sealed blob SHA-256 must be 64 lowercase hex characters');
+  }
   const previewRange = normalizePreviewRange(contentBytes, options.previewContent);
-  const previewHash = previewLeaf(toBytes(previewPayload));
-  const { leaves, previewLeafIndex } = contentLeaves(contentBytes, salt, previewRange, chunkSize);
-  const contentMerkleRoot = merkleRoot(leaves);
+  const previewHash = previewLeaf(version, toBytes(previewPayload));
+  const { leaves, previewLeafIndex } = contentLeaves(
+    version,
+    contentBytes,
+    salt,
+    previewRange,
+    chunkSize
+  );
+  const contentMerkleRoot = merkleRoot(version, leaves);
   const previewInclusion =
     previewRange && previewLeafIndex !== undefined
       ? {
           offset: previewRange.offset,
           length: previewRange.bytes.length,
           leafHash: leaves[previewLeafIndex],
-          path: merklePath(leaves, previewLeafIndex),
+          path: merklePath(version, leaves, previewLeafIndex),
         }
       : undefined;
 
   return {
     proof: {
-      version: STASH_PROOF_VERSION,
+      version,
       previewHash,
       contentMerkleRoot,
       contentLength: contentBytes.length,
       chunkSize,
+      sealedBlobSha256: options.sealedBlobSha256,
       previewInclusion,
-      root: rootHash(previewHash, contentMerkleRoot),
+      root: rootHash(version, previewHash, contentMerkleRoot, options.sealedBlobSha256),
     },
     secret: {
       contentSalt: bytesToHex(salt),
@@ -386,10 +432,13 @@ export function createStashProof(
 export function verifyPreview(previewPayload: Uint8Array | ArrayBuffer, proof: unknown): boolean {
   if (!isProofShape(proof)) return false;
 
-  const previewHash = previewLeaf(toBytes(previewPayload));
+  const previewHash = previewLeaf(proof.version, toBytes(previewPayload));
   if (previewHash !== proof.previewHash) return false;
 
-  return rootHash(proof.previewHash, proof.contentMerkleRoot) === proof.root;
+  return (
+    rootHash(proof.version, proof.previewHash, proof.contentMerkleRoot, proof.sealedBlobSha256) ===
+    proof.root
+  );
 }
 
 export function verifyPreviewInclusion(
@@ -406,11 +455,17 @@ export function verifyPreviewInclusion(
     return false;
   }
 
-  const leafHash = publicContentLeaf(proof.previewInclusion.offset, previewBytes);
+  const leafHash = publicContentLeaf(proof.version, proof.previewInclusion.offset, previewBytes);
   return (
     leafHash === proof.previewInclusion.leafHash &&
-    verifyMerklePath(leafHash, proof.previewInclusion.path, proof.contentMerkleRoot) &&
-    rootHash(proof.previewHash, proof.contentMerkleRoot) === proof.root
+    verifyMerklePath(
+      proof.version,
+      leafHash,
+      proof.previewInclusion.path,
+      proof.contentMerkleRoot
+    ) &&
+    rootHash(proof.version, proof.previewHash, proof.contentMerkleRoot, proof.sealedBlobSha256) ===
+      proof.root
   );
 }
 
@@ -443,8 +498,14 @@ export function verifyUnlockedFile(
         ),
       }
     : undefined;
-  const { leaves } = contentLeaves(contentBytes, salt, previewRange, proof.chunkSize);
-  const contentMerkleRoot = merkleRoot(leaves);
+  const { leaves } = contentLeaves(
+    proof.version,
+    contentBytes,
+    salt,
+    previewRange,
+    proof.chunkSize
+  );
+  const contentMerkleRoot = merkleRoot(proof.version, leaves);
   if (contentMerkleRoot !== proof.contentMerkleRoot) return false;
 
   if (proof.previewInclusion) {
@@ -453,7 +514,10 @@ export function verifyUnlockedFile(
     }
   }
 
-  return rootHash(proof.previewHash, proof.contentMerkleRoot) === proof.root;
+  return (
+    rootHash(proof.version, proof.previewHash, proof.contentMerkleRoot, proof.sealedBlobSha256) ===
+    proof.root
+  );
 }
 
 function validateChunkSizeForVerify(chunkSize: number): boolean {

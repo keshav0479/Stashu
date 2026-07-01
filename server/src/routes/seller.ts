@@ -11,6 +11,7 @@ import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
 export const sellerRoutes = new Hono();
+const SEALED_BLOB_FORMAT = 'stashu-selective-v1';
 
 function parseStoredJson<T>(value: string | null): T | undefined {
   return value ? (JSON.parse(decrypt(value)) as T) : undefined;
@@ -56,8 +57,9 @@ sellerRoutes.get('/:pubkey', async (c) => {
     }
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, preview_url,
-             generated_preview_payload, preview_proof, download_window_seconds, created_at
+      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
+             blob_format, preview_url, generated_preview_payload, preview_proof,
+             download_window_seconds, created_at
       FROM stashes
       WHERE seller_pubkey = ? AND show_in_storefront = 1
       ORDER BY created_at DESC
@@ -71,6 +73,9 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'file_name'
       | 'file_size'
       | 'price_sats'
+      | 'blob_url'
+      | 'blob_sha256'
+      | 'blob_format'
       | 'preview_url'
       | 'generated_preview_payload'
       | 'preview_proof'
@@ -85,6 +90,10 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileName: decrypt(row.file_name),
       fileSize: row.file_size,
       priceSats: row.price_sats,
+      blobFormat: row.blob_format === SEALED_BLOB_FORMAT ? SEALED_BLOB_FORMAT : undefined,
+      sealedBlobUrl: row.blob_format === SEALED_BLOB_FORMAT ? decrypt(row.blob_url) : undefined,
+      blobSha256:
+        row.blob_format === SEALED_BLOB_FORMAT ? (row.blob_sha256 ?? undefined) : undefined,
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(row.preview_proof),

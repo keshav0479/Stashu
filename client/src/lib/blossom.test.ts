@@ -39,7 +39,7 @@ vi.mock('./nostr.js', () => ({
   ),
 }));
 
-import { mirrorToBlossom, uploadToBlossom } from './blossom.js';
+import { fetchFromBlossomWithFallback, mirrorToBlossom, uploadToBlossom } from './blossom.js';
 
 describe('Blossom protocol client', () => {
   beforeEach(() => {
@@ -102,5 +102,36 @@ describe('Blossom protocol client', () => {
     expect(token).toMatch(/^[A-Za-z0-9\-_]+$/);
     expect(token).not.toContain('=');
     expect(init.body).toBe(JSON.stringify({ url: 'https://source.example.com/ciphertext' }));
+  });
+
+  it('rejects downloaded bytes that do not match the Blossom hash', async () => {
+    const expectedHash = sha256(new TextEncoder().encode('expected'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new TextEncoder().encode('swapped').buffer,
+      })
+    );
+
+    await expect(
+      fetchFromBlossomWithFallback(`https://blossom.primal.net/${expectedHash}`, expectedHash)
+    ).rejects.toThrow(/hash did not match/i);
+  });
+
+  it('rejects oversized downloads before using them as sealed packages', async () => {
+    const data = new TextEncoder().encode('too large');
+    const expectedHash = sha256(data);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => data.buffer,
+      })
+    );
+
+    await expect(
+      fetchFromBlossomWithFallback(`https://blossom.primal.net/${expectedHash}`, expectedHash, 4)
+    ).rejects.toThrow(/allowed size/i);
   });
 });

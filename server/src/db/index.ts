@@ -396,6 +396,14 @@ const currentVersion = (
         console.log('⏳ Added download_window_seconds column to stashes.');
       },
     },
+    {
+      version: 12,
+      name: 'add sealed blob format to stashes',
+      run: () => {
+        db.exec(`ALTER TABLE stashes ADD COLUMN blob_format TEXT DEFAULT NULL`);
+        console.log('Added blob_format column for sealed selective-reveal packages.');
+      },
+    },
   ];
 
   // Run pending migrations in a transaction

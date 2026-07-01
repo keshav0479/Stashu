@@ -47,12 +47,13 @@ export interface GeneratedPreviewPayload {
 }
 
 export interface StashProof {
-  version: 'stashu-preview-v1';
+  version: 'stashu-preview-v1' | 'stashu-preview-v2';
   root: string;
   previewHash: string;
   contentMerkleRoot: string;
   contentLength: number;
   chunkSize: number;
+  sealedBlobSha256?: string;
   previewInclusion?: PreviewInclusionProof;
 }
 
@@ -83,6 +84,7 @@ export interface Stash {
   description?: string;
   fileName: string;
   fileSize: number;
+  blobFormat?: StashBlobFormat;
   previewUrl?: string;
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
@@ -98,6 +100,9 @@ export interface StashPublicInfo {
   fileName: string;
   fileSize: number;
   priceSats: number;
+  blobFormat?: StashBlobFormat;
+  sealedBlobUrl?: string;
+  blobSha256?: string;
   previewUrl?: string;
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
@@ -158,6 +163,7 @@ export interface CreateStashRequest {
   description?: string;
   fileName: string;
   fileSize: number;
+  blobFormat?: StashBlobFormat;
   previewUrl?: string;
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
@@ -165,6 +171,8 @@ export interface CreateStashRequest {
   // One of DOWNLOAD_WINDOW_OPTIONS. Omitted falls back to the default server-side.
   downloadWindowSeconds?: number;
 }
+
+export type StashBlobFormat = 'stashu-selective-v1';
 
 export interface CreateStashResponse {
   id: string;
