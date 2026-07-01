@@ -171,6 +171,7 @@ Server:
 
 - `TOKEN_ENCRYPTION_KEY` - 64 hex chars. Required.
 - `MINT_URL` - Cashu mint URL.
+- `CASHU_REQUEST_TIMEOUT_MS` - abort unresponsive mint requests. Defaults to `10000`.
 - `CORS_ORIGINS` - comma-separated allowed origins.
 - `PORT` - server port. Defaults to `3000`.
 - `DB_PATH` - SQLite database path.

@@ -1,21 +1,42 @@
-import { Mint, Wallet, getDecodedToken, getEncodedTokenV4 } from '@cashu/cashu-ts';
+import {
+  Mint,
+  Wallet,
+  getDecodedToken,
+  getEncodedTokenV4,
+  setGlobalRequestOptions,
+} from '@cashu/cashu-ts';
 import type { Proof } from '@cashu/cashu-ts';
 import db from '../db/index.js';
 import { encrypt } from './encryption.js';
 
 // Cashu Mint URL — configurable via env for production
 const MINT_URL = process.env.MINT_URL || 'https://mint.minibits.cash/Bitcoin';
+const configuredTimeout = Number(process.env.CASHU_REQUEST_TIMEOUT_MS);
+const CASHU_REQUEST_TIMEOUT_MS =
+  Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 10_000;
+
+setGlobalRequestOptions({ requestTimeout: CASHU_REQUEST_TIMEOUT_MS });
 
 let wallet: Wallet | null = null;
+let walletLoading: Promise<Wallet> | null = null;
 
 async function getWallet(): Promise<Wallet> {
-  if (!wallet) {
-    const mint = new Mint(MINT_URL);
-    wallet = new Wallet(mint);
-    // Load keys from mint
-    await wallet.loadMint();
+  if (wallet) return wallet;
+
+  if (!walletLoading) {
+    walletLoading = (async () => {
+      const mint = new Mint(MINT_URL);
+      const loadingWallet = new Wallet(mint);
+      // Cache only a fully initialized wallet so transient mint failures can recover.
+      await loadingWallet.loadMint();
+      wallet = loadingWallet;
+      return loadingWallet;
+    })().finally(() => {
+      walletLoading = null;
+    });
   }
-  return wallet;
+
+  return walletLoading;
 }
 
 export interface SwapResult {

@@ -76,7 +76,10 @@ payRoutes.post('/:id/invoice', async (c) => {
     });
   } catch (error) {
     console.error('Error creating payment invoice:', error);
-    return c.json<APIResponse<never>>({ success: false, error: 'Failed to create invoice' }, 500);
+    return c.json<APIResponse<never>>(
+      { success: false, error: 'Cashu mint is unavailable. Please try again shortly.' },
+      503
+    );
   }
 });
 
