@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { getStashInfo, unlockStash, claimStash } from './api';
 import { decryptFile, fromBase64 } from './crypto';
 import { fetchFromBlossomWithFallback } from './blossom';
@@ -31,8 +31,11 @@ export interface UnlockState {
   claimExpiresAt: number | null;
 }
 
+// Hash-keyed so the pre-payment download survives remounts and can never be
+// served for a different blob. Single entry keeps at most one package in memory.
+let cachedSealedPackage: { sha256: string; blob: Uint8Array } | null = null;
+
 export function useUnlock(stashId: string) {
-  const sealedPackageRef = useRef<Uint8Array | null>(null);
   const [state, setState] = useState<UnlockState>({
     status: 'loading',
     stash: null,
@@ -55,7 +58,9 @@ export function useUnlock(stashId: string) {
       setState((s) => ({ ...s, status: 'decrypting', error: null }));
 
       const sealedBlob =
-        sealedPackageRef.current ??
+        (data.blobSha256 && cachedSealedPackage?.sha256 === data.blobSha256
+          ? cachedSealedPackage.blob
+          : null) ??
         (await fetchFromBlossomWithFallback(
           data.blobUrl,
           data.blobSha256,
@@ -98,7 +103,7 @@ export function useUnlock(stashId: string) {
         blobSha256: null,
       }));
       const stash = await getStashInfo(stashId);
-      sealedPackageRef.current = null;
+      cachedSealedPackage = null;
       if (stash.blobFormat === STASH_BLOB_FORMAT && stash.generatedPreview?.kind === 'text-peek') {
         if (!stash.sealedBlobUrl || !stash.blobSha256) {
           throw new Error('Sealed stash package metadata is missing');
@@ -111,7 +116,7 @@ export function useUnlock(stashId: string) {
         if (!verifySealedStashPackageBundle(stash, sealedPackage)) {
           throw new Error('Sealed stash package verification failed');
         }
-        sealedPackageRef.current = sealedPackage;
+        cachedSealedPackage = { sha256: stash.blobSha256, blob: sealedPackage };
       }
       // If a claim token exists, go straight to 'claiming' to avoid flashing payment UI
       const hasClaimToken = !!localStorage.getItem(`stashu-claim-${stashId}`);
@@ -236,7 +241,7 @@ export function useUnlock(stashId: string) {
     if (state.downloadUrl) {
       URL.revokeObjectURL(state.downloadUrl);
     }
-    sealedPackageRef.current = null;
+    cachedSealedPackage = null;
     setState({
       status: 'loading',
       stash: null,

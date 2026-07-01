@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import db from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
+import { sealedStashFields } from '../lib/sealedBlob.js';
 import type {
   GeneratedPreviewPayload,
   StashProof,
@@ -11,7 +12,6 @@ import { DEFAULT_DOWNLOAD_WINDOW_SECONDS } from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
 export const sellerRoutes = new Hono();
-const SEALED_BLOB_FORMAT = 'stashu-selective-v1';
 
 function parseStoredJson<T>(value: string | null): T | undefined {
   return value ? (JSON.parse(decrypt(value)) as T) : undefined;
@@ -90,10 +90,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileName: decrypt(row.file_name),
       fileSize: row.file_size,
       priceSats: row.price_sats,
-      blobFormat: row.blob_format === SEALED_BLOB_FORMAT ? SEALED_BLOB_FORMAT : undefined,
-      sealedBlobUrl: row.blob_format === SEALED_BLOB_FORMAT ? decrypt(row.blob_url) : undefined,
-      blobSha256:
-        row.blob_format === SEALED_BLOB_FORMAT ? (row.blob_sha256 ?? undefined) : undefined,
+      ...sealedStashFields(row),
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(row.preview_proof),

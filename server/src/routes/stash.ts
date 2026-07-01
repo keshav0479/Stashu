@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
+import { isPrivateOrReservedHostname } from '../lib/publicUrl.js';
+import { SEALED_BLOB_FORMAT, sealedStashFields } from '../lib/sealedBlob.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
   CreateStashRequest,
@@ -30,7 +32,6 @@ const MAX_PREVIEW_CHARS = 4_000;
 const MAX_MERKLE_PROOF_STEPS = 64;
 const MAX_TEXT_PREVIEW_RATIO = 0.5;
 const TEXT_LINE_LIMITS = new Set([4, 10, 20, 50]);
-const SEALED_BLOB_FORMAT = 'stashu-selective-v1';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -55,29 +56,7 @@ function isSafePublicBlobUrl(url: URL): boolean {
   }
   if (url.protocol !== 'https:') return false;
 
-  const hostname = url.hostname.toLowerCase();
-  if (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local') ||
-    hostname.includes(':')
-  ) {
-    return false;
-  }
-
-  const octets = hostname.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet))) {
-    return true;
-  }
-
-  return !(
-    octets[0] === 0 ||
-    octets[0] === 10 ||
-    octets[0] === 127 ||
-    (octets[0] === 169 && octets[1] === 254) ||
-    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-    (octets[0] === 192 && octets[1] === 168)
-  );
+  return !isPrivateOrReservedHostname(url.hostname);
 }
 
 function base64UrlDecodedLength(value: string): number | null {
@@ -627,10 +606,7 @@ stashRoutes.get('/:id', async (c) => {
       fileName: decrypt(stash.file_name),
       fileSize: stash.file_size,
       priceSats: stash.price_sats,
-      blobFormat: stash.blob_format === SEALED_BLOB_FORMAT ? SEALED_BLOB_FORMAT : undefined,
-      sealedBlobUrl: stash.blob_format === SEALED_BLOB_FORMAT ? decrypt(stash.blob_url) : undefined,
-      blobSha256:
-        stash.blob_format === SEALED_BLOB_FORMAT ? (stash.blob_sha256 ?? undefined) : undefined,
+      ...sealedStashFields(stash),
       previewUrl: stash.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload),
       previewProof: parseStoredJson<StashProof>(stash.preview_proof),

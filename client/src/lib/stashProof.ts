@@ -1,4 +1,5 @@
 import { bytesToHex, sha256 } from './crypto.js';
+import { concat, randomBytes, toBytes, uint32Bytes, uint64Bytes } from './bytes.js';
 
 export const STASH_PROOF_VERSION = 'stashu-preview-v1' as const;
 export const SEALED_STASH_PROOF_VERSION = 'stashu-preview-v2' as const;
@@ -52,16 +53,6 @@ export interface PreviewContentRange {
   bytes: Uint8Array | ArrayBuffer;
 }
 
-function randomBytes(length: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
-function toBytes(data: Uint8Array | ArrayBuffer): Uint8Array {
-  return data instanceof Uint8Array ? data : new Uint8Array(data);
-}
-
 function frame(part: Uint8Array): Uint8Array {
   if (part.length > MAX_FRAME_LENGTH) {
     throw new Error('Proof frame is too large');
@@ -71,19 +62,6 @@ function frame(part: Uint8Array): Uint8Array {
   new DataView(framed.buffer).setUint32(0, part.length, false);
   framed.set(part, 4);
   return framed;
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((total, part) => total + part.length, 0);
-  const result = new Uint8Array(length);
-  let offset = 0;
-
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-
-  return result;
 }
 
 function taggedHash(tag: string, parts: Uint8Array[]): string {
@@ -103,24 +81,6 @@ function hashToBytes(hash: string): Uint8Array {
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(hash.slice(i * 2, i * 2 + 2), 16);
   }
-  return bytes;
-}
-
-function uint32Bytes(value: number): Uint8Array {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setUint32(0, value, false);
-  return bytes;
-}
-
-function uint64Bytes(value: number): Uint8Array {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error('Proof offset must be a safe non-negative integer');
-  }
-
-  const bytes = new Uint8Array(8);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, Math.floor(value / 0x100000000), false);
-  view.setUint32(4, value >>> 0, false);
   return bytes;
 }
 

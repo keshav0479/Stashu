@@ -1,5 +1,6 @@
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { fromBase64, generateKey, sha256, toBase64 } from './crypto';
+import { concat, randomBytes, toBytes, uint32Bytes, uint64Bytes } from './bytes';
 
 export const STASH_BLOB_FORMAT = 'stashu-selective-v1' as const;
 
@@ -48,45 +49,6 @@ export interface SealedStashPackage {
   blob: Uint8Array;
   blobSha256: string;
   secretKey: string;
-}
-
-function randomBytes(length: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
-function toBytes(data: Uint8Array | ArrayBuffer): Uint8Array {
-  return data instanceof Uint8Array ? data : new Uint8Array(data);
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((total, part) => total + part.length, 0);
-  const result = new Uint8Array(length);
-  let offset = 0;
-
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-
-  return result;
-}
-
-function uint32Bytes(value: number): Uint8Array {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setUint32(0, value, false);
-  return bytes;
-}
-
-function uint64Bytes(value: number): Uint8Array {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error('Package offsets must be safe non-negative integers');
-  }
-
-  const bytes = new Uint8Array(8);
-  new DataView(bytes.buffer).setBigUint64(0, BigInt(value), false);
-  return bytes;
 }
 
 function readUint64(view: DataView, offset: number): number {
