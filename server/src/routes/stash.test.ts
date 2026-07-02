@@ -882,3 +882,99 @@ describe('GET /api/stash/:id', () => {
     assert.equal(data.blobSha256, input.blobSha256);
   });
 });
+
+describe('GET /api/stash/:id/manifest', () => {
+  it('returns 404 for non-existent stash', async () => {
+    const res = await app.request('/api/stash/nonexistent/manifest');
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).success, false);
+  });
+
+  it('returns a versioned manifest for a legacy stash', async () => {
+    const input = validBody();
+    const createRes = await createStash(input);
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}/manifest`);
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+
+    assert.equal(data.version, 'stashu-manifest-v1');
+    assert.equal(data.id, created.id);
+    assert.equal(data.title, input.title);
+    assert.deepEqual(data.file, { name: input.fileName, size: input.fileSize });
+    assert.equal(data.priceSats, input.priceSats);
+    assert.deepEqual(data.payment.methods, ['lightning', 'cashu']);
+    assert.deepEqual(data.payment.endpoints, {
+      invoice: { method: 'POST', path: `/api/pay/${created.id}/invoice` },
+      status: { method: 'GET', path: `/api/pay/${created.id}/status/{quoteId}` },
+      unlock: { method: 'POST', path: `/api/unlock/${created.id}` },
+      claim: { method: 'GET', path: `/api/unlock/${created.id}/claim?token={claimToken}` },
+    });
+    assert.equal(data.blob, undefined);
+    assert.deepEqual(data.preview, { kind: 'none' });
+    assert.equal(data.legacy, true);
+    assert.equal(res.headers.get('Cache-Control'), 'public, max-age=60');
+  });
+
+  it('returns the legacy image preview when present', async () => {
+    const previewUrl = 'https://blossom.example.com/preview.png';
+    const createRes = await createStash({ ...validBody(), previewUrl });
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}/manifest`);
+    const { data } = await res.json();
+    assert.deepEqual(data.preview, { kind: 'image', imageUrl: previewUrl });
+  });
+
+  it('returns sealed package and verified preview details', async () => {
+    const input = { ...validBody(), ...validSealedPreviewBundle() };
+    const createRes = await createStash(input);
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}/manifest`);
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+
+    assert.deepEqual(data.blob, {
+      format: 'stashu-selective-v1',
+      url: input.blobUrl,
+      sha256: input.blobSha256,
+    });
+    assert.equal(data.legacy, false);
+    assert.equal(data.preview.kind, 'generated');
+    assert.deepEqual(data.preview.generated, input.generatedPreview);
+    assert.deepEqual(data.preview.proof, input.previewProof);
+  });
+
+  it('never exposes secrets anywhere in the manifest', async () => {
+    const input = { ...validBody(), ...validSealedPreviewBundle() };
+    const createRes = await createStash(input);
+    const { data: created } = await createRes.json();
+
+    const res = await app.request(`/api/stash/${created.id}/manifest`);
+    const raw = await res.text();
+
+    assert.ok(!raw.includes(input.secretKey), 'decrypt key leaked');
+    assert.ok(!raw.includes(input.previewSecret.contentSalt), 'proof secret leaked');
+    assert.ok(!raw.includes(pk), 'seller pubkey leaked');
+
+    const { data } = JSON.parse(raw);
+    const allowed = new Set([
+      'version',
+      'id',
+      'title',
+      'description',
+      'file',
+      'priceSats',
+      'payment',
+      'blob',
+      'preview',
+      'legacy',
+      'downloadWindowSeconds',
+    ]);
+    for (const key of Object.keys(data)) {
+      assert.ok(allowed.has(key), `unexpected manifest field: ${key}`);
+    }
+  });
+});
