@@ -9,6 +9,7 @@ import type {
   CreateStashRequest,
   CreateStashResponse,
   GeneratedPreviewPayload,
+  StashManifest,
   StashProof,
   StashProofSecret,
   StashPublicInfo,
@@ -17,6 +18,7 @@ import type {
 import {
   ALLOWED_DOWNLOAD_WINDOW_SECONDS,
   DEFAULT_DOWNLOAD_WINDOW_SECONDS,
+  STASH_MANIFEST_VERSION,
 } from '../../../shared/types.js';
 import type { StashRow } from '../db/types.js';
 
@@ -559,34 +561,101 @@ stashRoutes.post('/:id/visibility', async (c) => {
   }
 });
 
+type PublicStashRow = Pick<
+  StashRow,
+  | 'id'
+  | 'title'
+  | 'description'
+  | 'file_name'
+  | 'file_size'
+  | 'price_sats'
+  | 'blob_url'
+  | 'blob_sha256'
+  | 'blob_format'
+  | 'preview_url'
+  | 'generated_preview_payload'
+  | 'preview_proof'
+  | 'download_window_seconds'
+>;
+
+// Only ever selects public columns — secret_key and preview_secret must
+// never be read here.
+function getPublicStashRow(id: string): PublicStashRow | null {
+  return db
+    .prepare(
+      `SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
+              blob_format, preview_url, generated_preview_payload, preview_proof,
+              download_window_seconds
+       FROM stashes WHERE id = ?`
+    )
+    .get(id) as PublicStashRow | null;
+}
+
+// GET /api/stash/:id/manifest - Versioned machine-readable public manifest
+stashRoutes.get('/:id/manifest', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const stash = getPublicStashRow(id);
+
+    if (!stash) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
+    }
+
+    const sealed = sealedStashFields(stash);
+    const generated = parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload);
+    const proof = parseStoredJson<StashProof>(stash.preview_proof);
+
+    const preview: StashManifest['preview'] =
+      generated && proof
+        ? { kind: 'generated', generated, proof }
+        : stash.preview_url
+          ? { kind: 'image', imageUrl: stash.preview_url }
+          : { kind: 'none' };
+
+    const manifest: StashManifest = {
+      version: STASH_MANIFEST_VERSION,
+      id: stash.id,
+      title: decrypt(stash.title),
+      description: stash.description ? decrypt(stash.description) : undefined,
+      file: {
+        name: decrypt(stash.file_name),
+        size: stash.file_size,
+      },
+      priceSats: stash.price_sats,
+      payment: {
+        methods: ['lightning', 'cashu'],
+        endpoints: {
+          invoice: { method: 'POST', path: `/api/pay/${stash.id}/invoice` },
+          status: { method: 'GET', path: `/api/pay/${stash.id}/status/{quoteId}` },
+          unlock: { method: 'POST', path: `/api/unlock/${stash.id}` },
+          claim: { method: 'GET', path: `/api/unlock/${stash.id}/claim?token={claimToken}` },
+        },
+      },
+      blob: sealed.blobFormat
+        ? {
+            format: sealed.blobFormat,
+            url: sealed.sealedBlobUrl!,
+            sha256: sealed.blobSha256,
+          }
+        : undefined,
+      preview,
+      legacy: sealed.blobFormat === undefined,
+      downloadWindowSeconds: stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS,
+    };
+
+    c.header('Cache-Control', 'public, max-age=60');
+    return c.json<APIResponse<StashManifest>>({ success: true, data: manifest });
+  } catch (error) {
+    console.error('Error fetching stash manifest:', error);
+    return c.json<APIResponse<never>>({ success: false, error: 'Failed to fetch manifest' }, 500);
+  }
+});
+
 // GET /api/stash/:id - Get public stash info
 stashRoutes.get('/:id', async (c) => {
   try {
     const id = c.req.param('id');
-
-    const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
-             blob_format, preview_url, generated_preview_payload, preview_proof,
-             download_window_seconds
-      FROM stashes WHERE id = ?
-    `);
-
-    const stash = stmt.get(id) as Pick<
-      StashRow,
-      | 'id'
-      | 'title'
-      | 'description'
-      | 'file_name'
-      | 'file_size'
-      | 'price_sats'
-      | 'blob_url'
-      | 'blob_sha256'
-      | 'blob_format'
-      | 'preview_url'
-      | 'generated_preview_payload'
-      | 'preview_proof'
-      | 'download_window_seconds'
-    > | null;
+    const stash = getPublicStashRow(id);
 
     if (!stash) {
       return c.json<APIResponse<never>>(

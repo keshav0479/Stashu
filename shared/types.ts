@@ -112,6 +112,58 @@ export interface StashPublicInfo {
 }
 
 // ============================================
+// Public manifest
+// ============================================
+
+export const STASH_MANIFEST_VERSION = 'stashu-manifest-v1' as const;
+
+// Paths are relative to the API origin the manifest was fetched from and may
+// contain {placeholder} template segments.
+export interface ManifestEndpoint {
+  method: 'GET' | 'POST';
+  path: string;
+}
+
+export type StashManifestPreview =
+  | { kind: 'generated'; generated: GeneratedPreviewPayload; proof: StashProof }
+  | { kind: 'image'; imageUrl: string }
+  | { kind: 'none' };
+
+// Machine-readable public shape of a stash for external tools (CLI, SDK,
+// embed cards). Public info only — never contains the decrypt key, proof
+// secret (contentSalt), Cashu tokens, or the seller pubkey.
+export interface StashManifest {
+  version: typeof STASH_MANIFEST_VERSION;
+  id: string;
+  title: string;
+  description?: string;
+  file: {
+    name: string;
+    size: number;
+  };
+  priceSats: number;
+  payment: {
+    methods: ['lightning', 'cashu'];
+    endpoints: {
+      invoice: ManifestEndpoint;
+      status: ManifestEndpoint;
+      unlock: ManifestEndpoint;
+      claim: ManifestEndpoint;
+    };
+  };
+  // Present only for sealed (stashu-selective-v1) packages
+  blob?: {
+    format: StashBlobFormat;
+    url: string;
+    sha256?: string;
+  };
+  preview: StashManifestPreview;
+  // True for pre-sealed-package stashes
+  legacy: boolean;
+  downloadWindowSeconds: number;
+}
+
+// ============================================
 // Re-download window
 // ============================================
 

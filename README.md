@@ -97,6 +97,23 @@ Under the hood:
 For now, public previews are generated for text-like files. Other file types still
 get a no-public-preview commitment check after unlock.
 
+## Public Manifest
+
+Each stash exposes a versioned, machine-readable manifest at
+`GET /api/stash/:id/manifest` (`stashu-manifest-v1`) so external tools — a CLI,
+SDK, embed card, or agent — can inspect a stash and verify the same preview
+proofs the buyer UI checks. It contains public info only: id, title, price,
+file name/size, sealed blob URL and hash, generated preview and proof, payment
+methods, unlock/pay endpoint paths, and a `legacy` flag for pre-sealed stashes.
+
+Threat model: the manifest discloses nothing beyond what the existing public
+stash endpoint already returns to anyone holding the share link. It never
+contains the decrypt key, the proof secret (`contentSalt`), Cashu tokens, or
+the seller pubkey. Stash ids are random UUIDs and there is no global listing
+endpoint, so manifests are unlisted-by-link — though stashes a seller publishes
+to their storefront are intentionally discoverable via `GET /api/seller/:pubkey`.
+Manifests do NOT protect against a link holder republishing their contents.
+
 ## Tech Stack
 
 | Layer      | Technology                                |
@@ -216,6 +233,7 @@ docker compose up --build
 - [x] Seller dashboard, withdrawal, and auto-settlement
 - [x] Storefront publishing controls
 - [x] Verified Peek for text-like files
+- [x] Public machine-readable manifest per stash
 - [ ] Rich previews for images, PDFs, and archives
 - [ ] Stash lifecycle controls for editing, unpublishing, and deleting
 - [ ] Clearer fee estimates before withdrawal
