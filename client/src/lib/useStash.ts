@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { readFileAsArrayBuffer } from './crypto';
-import { uploadToBlossom, getBlossomServer, mirrorToBackupServers } from './blossom';
+import { uploadWithFailover, getBlossomServer, mirrorToBackupServers } from './blossom';
 import { getPublicKey } from './nostr';
 import { createStash } from './api';
 import { hasIdentity, hasAcknowledgedRecovery } from './identity';
@@ -90,18 +90,16 @@ export function useStash() {
       );
 
       setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
-      const selectedServer = getBlossomServer();
-      const uploadResult = await uploadToBlossom(
+      const { result: uploadResult, server: uploadedServer } = await uploadWithFailover(
         sealedPackage.blob,
-        'application/octet-stream',
-        selectedServer
+        getBlossomServer()
       );
       if (uploadResult.sha256 !== sealedPackage.blobSha256) {
         throw new Error('Uploaded sealed package hash did not match');
       }
 
       // Mirror to backup servers for redundancy (fire-and-forget)
-      mirrorToBackupServers(uploadResult.sha256, uploadResult.url, selectedServer);
+      mirrorToBackupServers(uploadResult.sha256, uploadResult.url, uploadedServer);
 
       setState((s) => ({ ...s, status: 'creating', progress: 80 }));
       const stashResult = await createStash({

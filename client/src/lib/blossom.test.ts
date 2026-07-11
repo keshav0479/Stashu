@@ -39,7 +39,12 @@ vi.mock('./nostr.js', () => ({
   ),
 }));
 
-import { fetchFromBlossomWithFallback, mirrorToBlossom, uploadToBlossom } from './blossom.js';
+import {
+  fetchFromBlossomWithFallback,
+  mirrorToBlossom,
+  uploadToBlossom,
+  uploadWithFailover,
+} from './blossom.js';
 
 describe('Blossom protocol client', () => {
   beforeEach(() => {
@@ -54,7 +59,7 @@ describe('Blossom protocol client', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await uploadToBlossom(data, 'text/plain', 'https://blossom.example.com');
+    const result = await uploadToBlossom(data, 'https://blossom.example.com');
 
     expect(result.sha256).toBe(sha256(data));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -68,11 +73,41 @@ describe('Blossom protocol client', () => {
       )
     );
 
-    expect(headers['Content-Type']).toBe('text/plain');
+    // Uploads always declare octet-stream — the bytes are ciphertext (issue #34)
+    expect(headers['Content-Type']).toBe('application/octet-stream');
     expect(headers['X-SHA-256']).toBe(sha256(data));
     expect(token).toBe(expectedToken);
     expect(token).toMatch(/^[A-Za-z0-9\-_]+$/);
     expect(token).not.toContain('=');
+  });
+
+  it('retries with legacy standard base64 auth when a server rejects base64url', async () => {
+    const data = new TextEncoder().encode('legacy server upload');
+    const fetchMock = vi
+      .fn()
+      // Browsers throw (opaque CORS failure) instead of exposing the 400
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ url: 'https://blossom.example.com/blob' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await uploadToBlossom(data, 'https://blossom.example.com');
+
+    expect(result.sha256).toBe(sha256(data));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const eventJson = JSON.stringify(
+      blossomFixtures.makeUploadEvent('https://blossom.example.com/upload', sha256(data))
+    );
+    const firstAuth = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const secondAuth = (fetchMock.mock.calls[1][1] as RequestInit).headers as Record<
+      string,
+      string
+    >;
+    expect(firstAuth.Authorization).toBe(`Nostr ${toBase64Url(eventJson)}`);
+    expect(secondAuth.Authorization).toBe(`Nostr ${btoa(eventJson)}`);
   });
 
   it('mirrors with Base64url auth', async () => {
@@ -115,7 +150,7 @@ describe('Blossom protocol client', () => {
     );
 
     await expect(
-      fetchFromBlossomWithFallback(`https://blossom.primal.net/${expectedHash}`, expectedHash)
+      fetchFromBlossomWithFallback(`https://blossom.example.com/${expectedHash}`, expectedHash)
     ).rejects.toThrow(/hash did not match/i);
   });
 
@@ -131,7 +166,50 @@ describe('Blossom protocol client', () => {
     );
 
     await expect(
-      fetchFromBlossomWithFallback(`https://blossom.primal.net/${expectedHash}`, expectedHash, 4)
+      fetchFromBlossomWithFallback(`https://blossom.example.com/${expectedHash}`, expectedHash, 4)
     ).rejects.toThrow(/allowed size/i);
+  });
+
+  it('fails over to the next preset server when the selected server rejects uploads', async () => {
+    const data = new TextEncoder().encode('failover upload');
+    const fetchMock = vi.fn((url: RequestInfo | URL) =>
+      String(url).startsWith('https://blossom.primal.net')
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve({ ok: true, json: async () => ({}) })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // A stale saved selection (e.g. primal) must not strand the seller
+    const { result, server } = await uploadWithFailover(data, 'https://blossom.primal.net');
+
+    expect(server).toBe('https://blossom.ditto.pub');
+    expect(result.sha256).toBe(sha256(data));
+    // Both auth encodings are tried on the dead server before moving on
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      'https://blossom.primal.net/upload',
+      'https://blossom.primal.net/upload',
+      'https://blossom.ditto.pub/upload',
+    ]);
+  });
+
+  it('falls back to legacy servers for downloads of older replicas', async () => {
+    const data = new TextEncoder().encode('legacy replica');
+    const hash = sha256(data);
+    const fetchMock = vi.fn((url: RequestInfo | URL) =>
+      String(url) === `https://blossom.primal.net/${hash}`
+        ? Promise.resolve({ ok: true, arrayBuffer: async () => data.buffer })
+        : Promise.reject(new TypeError('Failed to fetch'))
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const blob = await fetchFromBlossomWithFallback(`https://dead.example.com/${hash}`, hash);
+
+    expect(blob).toEqual(data);
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      `https://dead.example.com/${hash}`,
+      `https://blossom.ditto.pub/${hash}`,
+      `https://blossom.data.haus/${hash}`,
+      `https://blossom.primal.net/${hash}`,
+    ]);
   });
 });

@@ -7,12 +7,23 @@
 import { createBlossomAuthEvent, createBlossomMirrorAuthEvent } from './nostr';
 import { sha256 } from './crypto';
 
-const DEFAULT_BLOSSOM_SERVER = import.meta.env.VITE_BLOSSOM_URL || 'https://blossom.primal.net';
+const DEFAULT_BLOSSOM_SERVER = (
+  import.meta.env.VITE_BLOSSOM_URL || 'https://blossom.ditto.pub'
+).replace(/\/+$/, '');
 const BLOSSOM_STORAGE_KEY = 'stashu_blossom_server';
 
-export const PRESET_BLOSSOM_SERVERS = [{ label: 'Primal', url: 'https://blossom.primal.net' }];
+// Presets must accept opaque application/octet-stream blobs (sealed packages)
+// and send CORS headers on error responses.
+export const PRESET_BLOSSOM_SERVERS = [
+  { label: 'Ditto', url: 'https://blossom.ditto.pub' },
+  { label: 'Data Haus', url: 'https://blossom.data.haus' },
+];
 
 export const MIRROR_SERVERS = PRESET_BLOSSOM_SERVERS.map((s) => s.url);
+
+// No longer accept our uploads, but may still hold replicas of older stashes —
+// searched during download fallback only.
+const LEGACY_DOWNLOAD_SERVERS = ['https://blossom.primal.net'];
 
 const BLOSSOM_MIRRORING_KEY = 'stashu_blossom_mirroring';
 
@@ -63,19 +74,50 @@ export interface BlossomUploadResult {
   type: string;
 }
 
-function encodeBase64Url(value: string): string {
-  return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+// BUD-11 mandates unpadded base64url, but some live servers only accept
+// pre-BUD-11 standard base64 — send the spec form first and retry once
+// with the legacy form on rejection.
+function authHeaders(event: unknown): [string, string] {
+  const base64 = btoa(JSON.stringify(event));
+  const base64Url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return [`Nostr ${base64Url}`, `Nostr ${base64}`];
 }
+
+async function fetchWithAuthFallback(
+  url: string,
+  event: unknown,
+  init: Omit<RequestInit, 'headers'> & { headers: Record<string, string> }
+): Promise<Response> {
+  const [specAuth, legacyAuth] = authHeaders(event);
+  const request = (auth: string) =>
+    fetch(url, { ...init, headers: { ...init.headers, Authorization: auth } });
+
+  // Browsers surface a rejected auth as a thrown TypeError when the error
+  // response carries no CORS headers, so retry on both a visible 400/401
+  // and a network-level failure.
+  try {
+    const response = await request(specAuth);
+    if (response.ok || (response.status !== 400 && response.status !== 401)) {
+      return response;
+    }
+  } catch {
+    // fall through to the legacy retry
+  }
+  return request(legacyAuth);
+}
+
+// Uploads are always sealed ciphertext, so the declared type is always
+// application/octet-stream — some Blossom servers reject bytes that don't
+// match a media Content-Type.
+const UPLOAD_CONTENT_TYPE = 'application/octet-stream';
 
 /**
  * Upload a blob to Blossom server with NIP-98 authentication
  * @param data The encrypted file data
- * @param contentType MIME type of the file
  * @param server Optional Blossom server URL
  */
 export async function uploadToBlossom(
   data: Uint8Array,
-  contentType: string = 'application/octet-stream',
   server: string = DEFAULT_BLOSSOM_SERVER
 ): Promise<BlossomUploadResult> {
   const uploadUrl = `${server}/upload`;
@@ -86,15 +128,10 @@ export async function uploadToBlossom(
   // Create Blossom Authorization event (kind 24242)
   const authEvent = await createBlossomAuthEvent(uploadUrl, dataHash);
 
-  // BUD-11 requires Base64url without padding in the Authorization header.
-  const authHeader = `Nostr ${encodeBase64Url(JSON.stringify(authEvent))}`;
-
-  // Upload the file
-  const response = await fetch(uploadUrl, {
+  const response = await fetchWithAuthFallback(uploadUrl, authEvent, {
     method: 'PUT',
     headers: {
-      Authorization: authHeader,
-      'Content-Type': contentType,
+      'Content-Type': UPLOAD_CONTENT_TYPE,
       'X-SHA-256': dataHash,
     },
     body: data as unknown as BodyInit,
@@ -112,8 +149,28 @@ export async function uploadToBlossom(
     url: result.url || `${server}/${dataHash}`,
     sha256: dataHash,
     size: data.length,
-    type: contentType,
+    type: UPLOAD_CONTENT_TYPE,
   };
+}
+
+/**
+ * Upload to the selected server, failing over through the presets —
+ * public servers can change upload policy at any time. Surfaces the
+ * first (most relevant) error when every server fails.
+ */
+export async function uploadWithFailover(
+  data: Uint8Array,
+  selectedServer: string
+): Promise<{ result: BlossomUploadResult; server: string }> {
+  let firstError: unknown;
+  for (const server of [selectedServer, ...MIRROR_SERVERS.filter((s) => s !== selectedServer)]) {
+    try {
+      return { result: await uploadToBlossom(data, server), server };
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  throw firstError instanceof Error ? firstError : new Error('All upload servers failed');
 }
 
 /**
@@ -177,14 +234,10 @@ export async function mirrorToBlossom(
   try {
     const mirrorUrl = `${mirrorServer}/mirror`;
     const authEvent = await createBlossomMirrorAuthEvent(mirrorUrl, blobSha256);
-    const authHeader = `Nostr ${encodeBase64Url(JSON.stringify(authEvent))}`;
 
-    const response = await fetch(mirrorUrl, {
+    const response = await fetchWithAuthFallback(mirrorUrl, authEvent, {
       method: 'PUT',
-      headers: {
-        Authorization: authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: sourceUrl }),
     });
 
@@ -235,8 +288,8 @@ export async function fetchFromBlossomWithFallback(
     if (!blobSha256) throw primaryError;
     let lastError = primaryError;
 
-    // Try each mirror server
-    for (const server of MIRROR_SERVERS) {
+    // Try current mirrors, then legacy servers that may hold older replicas
+    for (const server of [...MIRROR_SERVERS, ...LEGACY_DOWNLOAD_SERVERS]) {
       try {
         const fallbackUrl = `${server}/${blobSha256}`;
         if (fallbackUrl === primaryUrl) continue;
