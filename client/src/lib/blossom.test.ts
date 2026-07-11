@@ -54,7 +54,7 @@ describe('Blossom protocol client', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await uploadToBlossom(data, 'text/plain', 'https://blossom.example.com');
+    const result = await uploadToBlossom(data, 'https://blossom.example.com');
 
     expect(result.sha256).toBe(sha256(data));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -68,11 +68,41 @@ describe('Blossom protocol client', () => {
       )
     );
 
-    expect(headers['Content-Type']).toBe('text/plain');
+    // Uploads always declare octet-stream — the bytes are ciphertext (issue #34)
+    expect(headers['Content-Type']).toBe('application/octet-stream');
     expect(headers['X-SHA-256']).toBe(sha256(data));
     expect(token).toBe(expectedToken);
     expect(token).toMatch(/^[A-Za-z0-9\-_]+$/);
     expect(token).not.toContain('=');
+  });
+
+  it('retries with legacy standard base64 auth when a server rejects base64url', async () => {
+    const data = new TextEncoder().encode('legacy server upload');
+    const fetchMock = vi
+      .fn()
+      // Browsers throw (opaque CORS failure) instead of exposing the 400
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ url: 'https://blossom.example.com/blob' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await uploadToBlossom(data, 'https://blossom.example.com');
+
+    expect(result.sha256).toBe(sha256(data));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const eventJson = JSON.stringify(
+      blossomFixtures.makeUploadEvent('https://blossom.example.com/upload', sha256(data))
+    );
+    const firstAuth = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const secondAuth = (fetchMock.mock.calls[1][1] as RequestInit).headers as Record<
+      string,
+      string
+    >;
+    expect(firstAuth.Authorization).toBe(`Nostr ${toBase64Url(eventJson)}`);
+    expect(secondAuth.Authorization).toBe(`Nostr ${btoa(eventJson)}`);
   });
 
   it('mirrors with Base64url auth', async () => {
