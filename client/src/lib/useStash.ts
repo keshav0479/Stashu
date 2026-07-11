@@ -1,12 +1,6 @@
 import { useState, useCallback } from 'react';
 import { readFileAsArrayBuffer } from './crypto';
-import {
-  uploadToBlossom,
-  getBlossomServer,
-  mirrorToBackupServers,
-  MIRROR_SERVERS,
-  type BlossomUploadResult,
-} from './blossom';
+import { uploadWithFailover, getBlossomServer, mirrorToBackupServers } from './blossom';
 import { getPublicKey } from './nostr';
 import { createStash } from './api';
 import { hasIdentity, hasAcknowledgedRecovery } from './identity';
@@ -96,30 +90,10 @@ export function useStash() {
       );
 
       setState((s) => ({ ...s, status: 'uploading', progress: 60 }));
-      // Try the selected server first, then fail over through the presets —
-      // public servers can reject encrypted blobs at any time (as Primal did)
-      const selectedServer = getBlossomServer();
-      const uploadServers = [
-        selectedServer,
-        ...MIRROR_SERVERS.filter((server) => server !== selectedServer),
-      ];
-      let uploadResult: BlossomUploadResult | undefined;
-      let uploadedServer = selectedServer;
-      let lastUploadError: unknown;
-      for (const server of uploadServers) {
-        try {
-          uploadResult = await uploadToBlossom(sealedPackage.blob, server);
-          uploadedServer = server;
-          break;
-        } catch (error) {
-          lastUploadError = error;
-        }
-      }
-      if (!uploadResult) {
-        throw lastUploadError instanceof Error
-          ? lastUploadError
-          : new Error('All upload servers failed');
-      }
+      const { result: uploadResult, server: uploadedServer } = await uploadWithFailover(
+        sealedPackage.blob,
+        getBlossomServer()
+      );
       if (uploadResult.sha256 !== sealedPackage.blobSha256) {
         throw new Error('Uploaded sealed package hash did not match');
       }

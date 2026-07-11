@@ -7,18 +7,23 @@
 import { createBlossomAuthEvent, createBlossomMirrorAuthEvent } from './nostr';
 import { sha256 } from './crypto';
 
-const DEFAULT_BLOSSOM_SERVER = import.meta.env.VITE_BLOSSOM_URL || 'https://blossom.ditto.pub';
+const DEFAULT_BLOSSOM_SERVER = (
+  import.meta.env.VITE_BLOSSOM_URL || 'https://blossom.ditto.pub'
+).replace(/\/+$/, '');
 const BLOSSOM_STORAGE_KEY = 'stashu_blossom_server';
 
 // Presets must accept opaque application/octet-stream blobs (sealed packages)
-// and send CORS headers on error responses. Primal was removed 2026-07: it
-// now content-sniffs uploads and 415-rejects encrypted blobs.
+// and send CORS headers on error responses.
 export const PRESET_BLOSSOM_SERVERS = [
   { label: 'Ditto', url: 'https://blossom.ditto.pub' },
   { label: 'Data Haus', url: 'https://blossom.data.haus' },
 ];
 
 export const MIRROR_SERVERS = PRESET_BLOSSOM_SERVERS.map((s) => s.url);
+
+// No longer accept our uploads, but may still hold replicas of older stashes —
+// searched during download fallback only.
+const LEGACY_DOWNLOAD_SERVERS = ['https://blossom.primal.net'];
 
 const BLOSSOM_MIRRORING_KEY = 'stashu_blossom_mirroring';
 
@@ -69,9 +74,9 @@ export interface BlossomUploadResult {
   type: string;
 }
 
-// BUD-11 mandates unpadded base64url, but some live servers (e.g.
-// blossom.primal.net) still only accept pre-BUD-11 standard base64 —
-// send the spec form first and retry once with the legacy form on rejection.
+// BUD-11 mandates unpadded base64url, but some live servers only accept
+// pre-BUD-11 standard base64 — send the spec form first and retry once
+// with the legacy form on rejection.
 function authHeaders(event: unknown): [string, string] {
   const base64 = btoa(JSON.stringify(event));
   const base64Url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -88,8 +93,8 @@ async function fetchWithAuthFallback(
     fetch(url, { ...init, headers: { ...init.headers, Authorization: auth } });
 
   // Browsers surface a rejected auth as a thrown TypeError when the error
-  // response carries no CORS headers (as primal's does), so retry on both
-  // a visible 400/401 and a network-level failure.
+  // response carries no CORS headers, so retry on both a visible 400/401
+  // and a network-level failure.
   try {
     const response = await request(specAuth);
     if (response.ok || (response.status !== 400 && response.status !== 401)) {
@@ -103,7 +108,7 @@ async function fetchWithAuthFallback(
 
 // Uploads are always sealed ciphertext, so the declared type is always
 // application/octet-stream — some Blossom servers reject bytes that don't
-// match a media Content-Type (issue #34).
+// match a media Content-Type.
 const UPLOAD_CONTENT_TYPE = 'application/octet-stream';
 
 /**
@@ -146,6 +151,26 @@ export async function uploadToBlossom(
     size: data.length,
     type: UPLOAD_CONTENT_TYPE,
   };
+}
+
+/**
+ * Upload to the selected server, failing over through the presets —
+ * public servers can change upload policy at any time. Surfaces the
+ * first (most relevant) error when every server fails.
+ */
+export async function uploadWithFailover(
+  data: Uint8Array,
+  selectedServer: string
+): Promise<{ result: BlossomUploadResult; server: string }> {
+  let firstError: unknown;
+  for (const server of [selectedServer, ...MIRROR_SERVERS.filter((s) => s !== selectedServer)]) {
+    try {
+      return { result: await uploadToBlossom(data, server), server };
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  throw firstError instanceof Error ? firstError : new Error('All upload servers failed');
 }
 
 /**
@@ -263,8 +288,8 @@ export async function fetchFromBlossomWithFallback(
     if (!blobSha256) throw primaryError;
     let lastError = primaryError;
 
-    // Try each mirror server
-    for (const server of MIRROR_SERVERS) {
+    // Try current mirrors, then legacy servers that may hold older replicas
+    for (const server of [...MIRROR_SERVERS, ...LEGACY_DOWNLOAD_SERVERS]) {
       try {
         const fallbackUrl = `${server}/${blobSha256}`;
         if (fallbackUrl === primaryUrl) continue;
