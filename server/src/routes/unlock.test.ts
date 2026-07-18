@@ -18,6 +18,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import { createHash } from 'node:crypto';
+import { getEncodedTokenV4 } from '@cashu/cashu-ts';
 
 const db = (await import('../db/index.js')).default;
 const { encrypt } = await import('../lib/encryption.js');
@@ -93,6 +94,77 @@ describe('POST /api/unlock/:id', () => {
       body: JSON.stringify({ token: 'cashuTestToken' }),
     });
     assert.equal(res.status, 404);
+  });
+
+  it('rejects a token worth more than the price before swapping it', async () => {
+    insertStash();
+    const overpaidToken = getEncodedTokenV4({
+      mint: 'https://mint.example.com',
+      proofs: [
+        { id: '009a1f293253e41e', amount: 4096, secret: 'over-secret-1', C: '02' + 'a'.repeat(64) },
+        { id: '009a1f293253e41e', amount: 904, secret: 'over-secret-2', C: '02' + 'b'.repeat(64) },
+      ],
+    });
+
+    // Keep the fee lookup offline, an unreachable mint must not weaken the guard
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
+    try {
+      const res = await app.request(`/api/unlock/${TEST_STASH.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: overpaidToken }),
+      });
+      assert.equal(res.status, 400);
+      assert.match((await res.json()).error, /worth 5000 sats but the price is 100/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    // No payment record should exist, the token was never touched
+    const payments = db.prepare('SELECT COUNT(*) AS n FROM payments').get() as { n: number };
+    assert.equal(payments.n, 0);
+  });
+
+  it('rejects a token that would credit less than the price before swapping it', async () => {
+    insertStash();
+    const underpaidToken = getEncodedTokenV4({
+      mint: 'https://mint.example.com',
+      proofs: [
+        { id: '009a1f293253e41e', amount: 64, secret: 'under-secret-1', C: '02' + 'c'.repeat(64) },
+      ],
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
+    try {
+      const res = await app.request(`/api/unlock/${TEST_STASH.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: underpaidToken }),
+      });
+      assert.equal(res.status, 400);
+      assert.match((await res.json()).error, /worth 64 sats but the price is 100/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    const payments = db.prepare('SELECT COUNT(*) AS n FROM payments').get() as { n: number };
+    assert.equal(payments.n, 0);
+  });
+
+  it('rejects an undecodable token without creating a payment record', async () => {
+    insertStash();
+    const res = await app.request(`/api/unlock/${TEST_STASH.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'cashuNotARealToken' }),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /Invalid Cashu token/);
+
+    const payments = db.prepare('SELECT COUNT(*) AS n FROM payments').get() as { n: number };
+    assert.equal(payments.n, 0);
   });
 
   it('returns unlock data with claimToken for already-paid token (idempotent)', async () => {

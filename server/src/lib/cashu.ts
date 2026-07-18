@@ -79,25 +79,25 @@ export async function verifyAndSwapToken(
   expectedSats: number
 ): Promise<SwapResult> {
   try {
-    // Decode the token
-    const decoded = getDecodedToken(tokenString);
-
-    // Calculate total value
-    const proofs = getProofsFromToken(decoded);
+    // Decode with wallet keyset context so short keyset ids (v4) resolve
+    const w = await getWallet();
+    const proofs = getProofsFromToken(w.decodeToken(tokenString));
     const totalValue = proofs.reduce((sum, proof) => sum + proof.amount, 0);
 
-    if (totalValue < expectedSats) {
+    // Exact-amount check with the same wallet snapshot receive() uses for its
+    // fee deduction, so unlike the route-level valuation guard it cannot race
+    // a wallet reload. Throws on unknown keysets, which receive() rejects anyway.
+    const receivable = totalValue - w.getFeesForProofs(proofs);
+    if (receivable !== expectedSats) {
       console.error(
-        `Token verification failed: insufficient value (${totalValue} < ${expectedSats})`
+        `Token verification failed: would credit ${receivable} sats, expected ${expectedSats}`
       );
       return {
         success: false,
-        error: 'Insufficient token value',
+        error: 'Token value does not match the price',
       };
     }
 
-    // Get wallet and swap proofs for new ones
-    const w = await getWallet();
     const newProofs = await w.receive(tokenString);
 
     // Encode the new proofs as a token for the seller (v4 format)
@@ -117,6 +117,45 @@ export async function verifyAndSwapToken(
       error: error instanceof Error ? error.message : 'Token swap failed',
     };
   }
+}
+
+export interface TokenValuation {
+  valueSats: number;
+  receivableSats: number;
+}
+
+/**
+ * Face value of a token and its post-fee receivable value (NUT-02 input fees).
+ * Returns null for undecodable tokens. Advisory only: on wallet or keyset
+ * failures it falls back to face value. verifyAndSwapToken re-enforces the
+ * exact amount at swap time, so a stale answer here can only blunt the error
+ * message, never mis-credit.
+ */
+export async function getTokenValuation(tokenString: string): Promise<TokenValuation | null> {
+  let w: Wallet | null = null;
+  try {
+    w = await getWallet();
+  } catch {
+    w = null;
+  }
+
+  let proofs: Proof[];
+  try {
+    // Wallet decode maps short keyset ids (v4); raw decode is the offline fallback
+    proofs = getProofsFromToken(w ? w.decodeToken(tokenString) : getDecodedToken(tokenString));
+  } catch {
+    return null;
+  }
+
+  const valueSats = proofs.reduce((sum, proof) => sum + proof.amount, 0);
+  if (w) {
+    try {
+      return { valueSats, receivableSats: valueSats - w.getFeesForProofs(proofs) };
+    } catch {
+      // Unknown keyset, the swap will surface it
+    }
+  }
+  return { valueSats, receivableSats: valueSats };
 }
 
 /**

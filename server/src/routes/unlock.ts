@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { createHash, randomBytes } from 'crypto';
 import db from '../db/index.js';
-import { verifyAndSwapToken } from '../lib/cashu.js';
+import { getTokenValuation, verifyAndSwapToken } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
 import { rateLimit } from '../middleware/ratelimit.js';
@@ -126,6 +126,28 @@ unlockRoutes.post('/:id', async (c) => {
           400
         );
       }
+    }
+
+    // Reject tokens that would not credit exactly the price before any swap:
+    // overpayment is swept to the seller in full with no change path back to
+    // the buyer, and a token netting less than the price after mint input fees
+    // (NUT-02) would credit less than the recorded earnings and break withdrawal.
+    const valuation = await getTokenValuation(body.token);
+    if (!valuation) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid Cashu token' }, 400);
+    }
+    if (valuation.receivableSats !== stash.price_sats) {
+      const feeSats = valuation.valueSats - valuation.receivableSats;
+      return c.json<APIResponse<never>>(
+        {
+          success: false,
+          error:
+            feeSats > 0
+              ? `Token is worth ${valuation.valueSats} sats but credits ${valuation.receivableSats} after the mint's ${feeSats}-sat receive fee. The price is ${stash.price_sats}, send ${stash.price_sats} sats plus the fee.`
+              : `Token is worth ${valuation.valueSats} sats but the price is ${stash.price_sats}. Send exactly ${stash.price_sats} sats.`,
+        },
+        400
+      );
     }
 
     // Create pending payment record
