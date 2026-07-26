@@ -9,13 +9,13 @@
     "test": "tsx --experimental-test-module-mocks --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@cashu/cashu-ts": "^3.7.0",
+    "@cashu/cashu-ts": "^3.7.1",
     "@hono/node-server": "^1.19.14",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "better-sqlite3": "^11.0.0",
-    "hono": "^4.12.19",
-    "nostr-tools": "^2.23.3",
+    "hono": "^4.12.31",
+    "nostr-tools": "^2.23.12",
     "uuid": "^11.1.1"
   },
   "devDependencies": {
