@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Unresponsive Cashu mints now time out instead of leaving buyers waiting indefinitely
 - Sealed blobs are cached by hash rather than re-fetched
-- Effect and memo patterns in the settings and unlock pages that caused avoidable re-renders
+- Settings page works out its initial state upfront instead of rendering once and then filling it in
 
 ### Security
 
@@ -44,6 +44,7 @@ Verified Peek, seller storefronts, and encryption at rest for every sensitive co
 
 - Every sensitive DB column is encrypted with XChaCha20-Poly1305 using `TOKEN_ENCRYPTION_KEY`
 - Downloads verify the stash before decrypting
+- Smoother Verified Peek flow, including its fallback state, and primary action styling unified across the app
 
 ### Security
 
