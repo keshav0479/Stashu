@@ -47,22 +47,17 @@ export function SettingsPage() {
   const [storefrontEnabled, setStorefrontEnabled] = useState(false);
   const [savingStorefront, setSavingStorefront] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [loadingSettings, setLoadingSettings] = useState(() => hasIdentity());
   const [settingsChanged, setSettingsChanged] = useState(false);
 
   // Blossom server state
   const [blossomServer, setBlossomServerState] = useState(getBlossomServer());
-  const [customBlossomUrl, setCustomBlossomUrl] = useState('');
+  // Kept in sync after mount by the preset/submit handlers below — no effect needed.
+  const [customBlossomUrl, setCustomBlossomUrl] = useState(() =>
+    PRESET_BLOSSOM_SERVERS.some((s) => s.url === blossomServer) ? '' : blossomServer
+  );
   const [blossomUrlError, setBlossomUrlError] = useState('');
   const [mirroringEnabled, setMirroringEnabledState] = useState(getMirroringEnabled());
-
-  const isCustomServer = !PRESET_BLOSSOM_SERVERS.some((s) => s.url === blossomServer);
-
-  useEffect(() => {
-    if (isCustomServer) {
-      setCustomBlossomUrl(blossomServer);
-    }
-  }, [blossomServer, isCustomServer]);
 
   useEffect(() => {
     if (hasIdentity()) {
@@ -77,8 +72,6 @@ export function SettingsPage() {
         })
         .catch(() => {})
         .finally(() => setLoadingSettings(false));
-    } else {
-      setLoadingSettings(false);
     }
   }, []);
 
@@ -166,6 +159,7 @@ export function SettingsPage() {
     }
     setBlossomServer(normalized);
     setBlossomServerState(normalized);
+    setCustomBlossomUrl(normalized);
     setBlossomUrlError('');
     toast.showToast('Blossom server updated', 'success');
   };

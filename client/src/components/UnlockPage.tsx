@@ -59,15 +59,16 @@ export function UnlockPage() {
     () => verifyGeneratedPreviewBundle(unlock.stash?.generatedPreview, unlock.stash?.previewProof),
     [unlock.stash?.generatedPreview, unlock.stash?.previewProof]
   );
+  const generatedPreview = unlock.stash?.generatedPreview;
   const previewStats = useMemo(() => {
-    if (!unlock.stash?.generatedPreview || unlock.stash.generatedPreview.kind !== 'text-peek') {
+    if (!generatedPreview || generatedPreview.kind !== 'text-peek') {
       return null;
     }
 
-    const metadata = unlock.stash.generatedPreview.metadata as TextPreviewMetadata;
+    const metadata = generatedPreview.metadata as TextPreviewMetadata;
     const percent =
-      unlock.stash.generatedPreview.fileSize > 0
-        ? Math.round((metadata.previewBytes / unlock.stash.generatedPreview.fileSize) * 1000) / 10
+      generatedPreview.fileSize > 0
+        ? Math.round((metadata.previewBytes / generatedPreview.fileSize) * 1000) / 10
         : 0;
 
     return {
@@ -75,7 +76,7 @@ export function UnlockPage() {
       lines: metadata.linesIncluded,
       percent,
     };
-  }, [unlock.stash?.generatedPreview]);
+  }, [generatedPreview]);
   const previewProofInvalid = previewVerification.state === 'invalid';
   const legacyTextPeek =
     unlock.stash?.generatedPreview?.kind === 'text-peek' &&
@@ -212,6 +213,29 @@ export function UnlockPage() {
     }
   }, [id, previewProofInvalid, startTimerAndPolling]);
 
+  const startOrResumeInvoice = useCallback(() => {
+    if (id) {
+      try {
+        const saved = sessionStorage.getItem(`stashu-invoice-${id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const remaining = parsed.expiresAt - Math.floor(Date.now() / 1000);
+          if (remaining > 10) {
+            // Resume polling the existing invoice
+            startTimerAndPolling(parsed.invoice, parsed.quoteId, parsed.expiresAt);
+            return;
+          }
+          // Expired — clean up
+          sessionStorage.removeItem(`stashu-invoice-${id}`);
+        }
+      } catch {
+        // Corrupted storage — ignore
+      }
+    }
+
+    createInvoice();
+  }, [id, createInvoice, startTimerAndPolling]);
+
   // Auto-create or resume invoice when Lightning tab is active and stash is loaded
   useEffect(() => {
     if (
@@ -226,37 +250,15 @@ export function UnlockPage() {
       return;
     }
 
-    // Try to resume a persisted invoice from sessionStorage
-    if (id) {
-      try {
-        const saved = sessionStorage.getItem(`stashu-invoice-${id}`);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          const remaining = parsed.expiresAt - Math.floor(Date.now() / 1000);
-          if (remaining > 10) {
-            // Resume polling the existing invoice
-            startTimerAndPolling(parsed.invoice, parsed.quoteId, parsed.expiresAt);
-            return;
-          } else {
-            // Expired — clean up
-            sessionStorage.removeItem(`stashu-invoice-${id}`);
-          }
-        }
-      } catch {
-        // Corrupted storage — ignore
-      }
-    }
-
-    createInvoice();
+    // Records the invoice the mint hands back, so the extra render here is intentional.
+    startOrResumeInvoice();
   }, [
     tab,
     unlock.stash,
     invoice,
     lnLoading,
     unlock.status,
-    id,
-    createInvoice,
-    startTimerAndPolling,
+    startOrResumeInvoice,
     previewProofInvalid,
   ]);
 
