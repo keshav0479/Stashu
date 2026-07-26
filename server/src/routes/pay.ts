@@ -50,8 +50,7 @@ payRoutes.post('/:id/invoice', async (c) => {
 
     // Get stash
     const stash = db.prepare('SELECT id, price_sats FROM stashes WHERE id = ?').get(stashId) as
-      | { id: string; price_sats: number }
-      | undefined;
+      { id: string; price_sats: number } | undefined;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
