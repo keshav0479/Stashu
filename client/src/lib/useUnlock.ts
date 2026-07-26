@@ -12,14 +12,7 @@ import {
 import type { StashProofSecret, StashPublicInfo } from '../../../shared/types';
 
 export type UnlockStatus =
-  | 'loading'
-  | 'claiming'
-  | 'ready'
-  | 'unlocking'
-  | 'decrypting'
-  | 'done'
-  | 'expired'
-  | 'error';
+  'loading' | 'claiming' | 'ready' | 'unlocking' | 'decrypting' | 'done' | 'expired' | 'error';
 
 export interface UnlockState {
   status: UnlockStatus;
