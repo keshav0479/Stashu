@@ -610,7 +610,9 @@ export function UnlockPage() {
                 <div className="flex items-start gap-2 rounded-lg bg-slate-950/50 p-3 text-left">
                   <FileText className="mt-0.5 w-4 h-4 shrink-0 text-slate-400" />
                   <p className="text-sm text-slate-400">
-                    No public preview. Stashu will verify the unlocked file after payment.
+                    No public preview. Stashu checked this sealed package against its published
+                    commitment, so it cannot be swapped after payment, and checks the file again
+                    once unlocked.
                   </p>
                 </div>
               )}

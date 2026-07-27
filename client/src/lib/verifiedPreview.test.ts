@@ -181,6 +181,45 @@ describe('verified preview helpers', () => {
     ).toBe(true);
   });
 
+  it('verifies a sealed package with a file-summary preview (no public bytes)', () => {
+    const content = bytes('entirely locked binary-ish content');
+    const preview = generatePreviewFromBytes({
+      fileName: 'archive.bin',
+      fileType: 'application/octet-stream',
+      fileSize: content.length,
+      content,
+    });
+    expect(preview.kind).toBe('file-summary');
+
+    const sealed = createSealedStashPackage(content);
+    const { proof } = createStashProof(serializeGeneratedPreviewPayload(preview), content, {
+      sealedBlobSha256: sealed.blobSha256,
+    });
+    const stash = {
+      blobFormat: STASH_BLOB_FORMAT,
+      blobSha256: sealed.blobSha256,
+      generatedPreview: preview,
+      previewProof: proof,
+    };
+
+    expect(verifySealedStashPackageBundle(stash, sealed.blob)).toBe(true);
+
+    // A package leaking public bytes despite the no-preview promise must fail,
+    // even with a proof correctly bound to that leaky package's hash
+    const leaky = createSealedStashPackage(content, { offset: 0, bytes: content.slice(0, 8) });
+    const { proof: leakyProof } = createStashProof(
+      serializeGeneratedPreviewPayload(preview),
+      content,
+      { sealedBlobSha256: leaky.blobSha256 }
+    );
+    expect(
+      verifySealedStashPackageBundle(
+        { ...stash, blobSha256: leaky.blobSha256, previewProof: leakyProof },
+        leaky.blob
+      )
+    ).toBe(false);
+  });
+
   it('rejects a swapped v2 package before payment even when the public text is identical', () => {
     const promised = bytes('same excerpt\npromised hidden');
     const swapped = bytes('same excerpt\nswapped hidden!');

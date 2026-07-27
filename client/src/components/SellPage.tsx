@@ -461,12 +461,12 @@ export function SellPage() {
     fileSummaryReason === 'unsupported-type'
       ? {
           title: 'No text preview for this file.',
-          body: 'The file will still get a commitment check after unlock.',
+          body: 'Buyers still check the sealed package against its commitment before paying, and the file again after unlock.',
         }
       : fileSummaryReason === 'decode-failed'
         ? {
             title: 'Could not read this as text.',
-            body: 'The file will still get a commitment check after unlock.',
+            body: 'Buyers still check the sealed package against its commitment before paying, and the file again after unlock.',
           }
         : fileSummaryReason === 'preview-would-reveal-file'
           ? {
