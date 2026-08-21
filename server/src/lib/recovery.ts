@@ -1,5 +1,10 @@
 import db from '../db/index.js';
-import { checkMeltQuoteStatus, mintAfterPayment, verifyAndSwapToken } from './cashu.js';
+import {
+  checkMeltQuoteStatus,
+  isQuoteAlreadyIssued,
+  mintAfterPayment,
+  verifyAndSwapToken,
+} from './cashu.js';
 import { encrypt, decrypt } from './encryption.js';
 import { tryAutoSettle } from './autosettle.js';
 
@@ -119,6 +124,16 @@ export async function recoverMintFailures(): Promise<void> {
         console.error('Auto-settle failed:', err instanceof Error ? err.message : err)
       );
     } catch (error) {
+      if (isQuoteAlreadyIssued(error)) {
+        // The mint issued this quote's ecash to a caller that lost it — no
+        // retry can ever succeed. Keep the row as evidence, stop retrying.
+        db.prepare(`UPDATE payments SET status = 'mint_lost' WHERE id = ?`).run(row.id);
+        console.error(
+          `  🪦 Payment ${row.id.substring(0, 8)}... marked mint_lost: quote already issued, ` +
+            `funds were minted earlier and lost before being stored. Needs manual follow-up.`
+        );
+        continue;
+      }
       console.error(`  ⚠️ Recovery failed for payment ${row.id.substring(0, 8)}...:`, error);
       // Leave as mint_failed — will retry next startup
     }

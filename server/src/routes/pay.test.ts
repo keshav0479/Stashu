@@ -68,6 +68,21 @@ describe('GET /api/pay/:id/status/:quoteId', () => {
     assert.match((await res.json()).error, /[Uu]nknown quote/);
   });
 
+  it('returns a terminal, no-rebill error for a mint_lost payment', async () => {
+    insertStash();
+    db.prepare(
+      `INSERT INTO payments (id, stash_id, status, token_hash) VALUES (?, ?, 'mint_lost', ?)`
+    ).run('ln-lost-quote', TEST_STASH_ID, 'lost-quote');
+
+    // No mint mock is installed: a terminal row must answer without touching it
+    const res = await app.request(`/api/pay/${TEST_STASH_ID}/status/lost-quote`);
+    assert.equal(res.status, 500);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.paid, undefined);
+    assert.match(body.error, /do not pay again/i);
+  });
+
   it('rejects quote bound to different stash (anti-replay)', async () => {
     insertStash();
     // Insert a second stash so the FK constraint is satisfied

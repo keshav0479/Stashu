@@ -131,3 +131,158 @@ describe('fee-aware token handling', () => {
     }
   });
 });
+
+describe('v2 keyset handling (mint rotation)', () => {
+  // A mint that rotated to a NUT-02 v2 keyset: 33-byte id, version byte 01.
+  // Proofs reference it by the 8-byte short form, which must be mapped.
+  const v2pair = createNewMintKeys(7, undefined, { input_fee_ppk: 0, versionByte: 1 });
+  const v1pair = createNewMintKeys(7, undefined, { input_fee_ppk: 0, versionByte: 0 });
+  const shortId = v2pair.keysetId.slice(0, 16);
+
+  const keysHexOf = (pair: typeof v2pair) =>
+    Object.fromEntries(
+      Object.entries(pair.pubKeys).map(([amount, key]) => [
+        amount,
+        Buffer.from(key).toString('hex'),
+      ])
+    );
+
+  const mintState = (pairs: (typeof v2pair)[]) => ({
+    '/v1/melt/quote/bolt11': {
+      quote: 'melt-quote-1',
+      amount: 10_000,
+      fee_reserve: 10,
+      state: 'UNPAID',
+      expiry: Math.floor(Date.now() / 1000) + 600,
+    },
+    '/v1/keysets': {
+      keysets: pairs.map((p) => ({ id: p.keysetId, unit: 'sat', active: true, input_fee_ppk: 0 })),
+    },
+    '/v1/keys': {
+      keysets: pairs.map((p) => ({ id: p.keysetId, unit: 'sat', keys: keysHexOf(p) })),
+    },
+    '/v1/info': {
+      name: 'test-mint',
+      pubkey: keysHexOf(v2pair)['1'],
+      version: 'test/1.0',
+      nuts: {
+        '4': { methods: [{ method: 'bolt11', unit: 'sat' }], disabled: false },
+        '5': { methods: [{ method: 'bolt11', unit: 'sat' }], disabled: false },
+      },
+    },
+  });
+
+  const shortIdToken = () =>
+    getEncodedTokenV4({
+      mint: 'https://mint.test',
+      proofs: [
+        { id: shortId, amount: 4, secret: 'v2-secret-4', C: '02' + 'b'.repeat(64) },
+        { id: shortId, amount: 2, secret: 'v2-secret-2', C: '02' + 'c'.repeat(64) },
+      ],
+    });
+
+  function mutableMockMint(state: { responses: Record<string, unknown>; hits: string[] }) {
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      state.hits.push(url);
+      const path = Object.keys(state.responses).find((p) => url.includes(p));
+      if (!path) return new Response('not found', { status: 404 });
+      return new Response(JSON.stringify(state.responses[path]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+  }
+
+  it('reloads the mint once when a short keyset id postdates the cached wallet', async () => {
+    const state = {
+      responses: mintState([v1pair]) as Record<string, unknown>,
+      hits: [] as string[],
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mutableMockMint(state);
+    try {
+      const { getTokenValuation } = await import('./cashu.js');
+
+      // Pin the cached wallet to a pre-rotation keyset list (v1 only)
+      const v1Token = getEncodedTokenV4({
+        mint: 'https://mint.test',
+        proofs: [{ id: v1pair.keysetId, amount: 8, secret: 'v1-secret', C: '02' + 'd'.repeat(64) }],
+      });
+      assert.deepEqual(await getTokenValuation(v1Token), { valueSats: 8, receivableSats: 8 });
+
+      // The mint rotates: v2 keyset appears. The cached wallet cannot know it.
+      state.responses = mintState([v1pair, v2pair]) as Record<string, unknown>;
+      state.hits.length = 0;
+
+      const result = await getTokenValuation(shortIdToken());
+      assert.deepEqual(result, { valueSats: 6, receivableSats: 6 });
+      assert.ok(
+        state.hits.some((u) => u.includes('/v1/keysets')),
+        'the wallet must reload keysets to map the rotated short id'
+      );
+
+      // Cooldown: a different unmappable short id right after must NOT trigger
+      // another reload, or a public token endpoint becomes a reload amplifier.
+      state.hits.length = 0;
+      const attackerToken = getEncodedTokenV4({
+        mint: 'https://mint.test',
+        proofs: [{ id: '01deadbeefdeadbe', amount: 1, secret: 'x', C: '02' + 'e'.repeat(64) }],
+      });
+      assert.equal(await getTokenValuation(attackerToken), null);
+      assert.ok(
+        !state.hits.some((u) => u.includes('/v1/keysets')),
+        'a second unmappable id within the cooldown must not reload keysets'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      setGlobalRequestOptions({});
+    }
+  });
+
+  it('meltWithRecovery decodes stored short-id tokens instead of failing on them', async () => {
+    const state = {
+      responses: mintState([v1pair, v2pair]) as Record<string, unknown>,
+      hits: [] as string[],
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mutableMockMint(state);
+    try {
+      const { meltWithRecovery } = await import('./cashu.js');
+      const result = await meltWithRecovery(
+        [shortIdToken()],
+        'lnbc-test-invoice',
+        'seller-pubkey-test'
+      );
+      // 6 sats cannot cover a 10,010-sat quote: the point is that decoding
+      // SUCCEEDED and we failed on balance, not on keyset mapping.
+      assert.equal(result.success, false);
+      assert.match(result.error ?? '', /insufficient balance/i);
+      assert.doesNotMatch(result.error ?? '', /keyset/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      setGlobalRequestOptions({});
+    }
+  });
+
+  it('isQuoteAlreadyIssued recognises the mint 20002 terminal state only', async () => {
+    const { isQuoteAlreadyIssued } = await import('./cashu.js');
+    assert.equal(isQuoteAlreadyIssued(Object.assign(new Error('nope'), { code: 20002 })), true);
+    assert.equal(isQuoteAlreadyIssued(new Error('Quote already issued')), true);
+    assert.equal(isQuoteAlreadyIssued(new Error('network down')), false);
+    assert.equal(isQuoteAlreadyIssued(Object.assign(new Error('x'), { code: 20001 })), false);
+  });
+
+  it('isStaleKeysetError reloads only the mappable case, not permanent id errors', async () => {
+    const { isStaleKeysetError } = await import('./cashu.js');
+    // Only this one can be fixed by reloading keysets
+    assert.equal(
+      isStaleKeysetError(new Error("Couldn't map short keyset ID 01ab to any known keysets")),
+      true
+    );
+    // These are permanent properties of the token — reloading is pointless
+    assert.equal(isStaleKeysetError(new Error('Short keyset ID 01ab is ambiguous.')), false);
+    assert.equal(isStaleKeysetError(new Error('Unknown keyset ID version: 2')), false);
+    assert.equal(isStaleKeysetError(new Error('network down')), false);
+  });
+});

@@ -109,6 +109,18 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       );
     }
 
+    // Terminal: the mint issued this quote's ecash and it was lost. Re-polling
+    // or re-minting can never resolve it, so answer without touching the mint.
+    if (existingPayment.status === 'mint_lost') {
+      return c.json<APIResponse<never>>(
+        {
+          success: false,
+          error: 'Payment received but processing failed. Do not pay again — contact the seller.',
+        },
+        500
+      );
+    }
+
     // Already processed — return the unlock data
     if (existingPayment.status === 'paid') {
       const stash = db
@@ -209,11 +221,17 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         });
       }
 
-      if (current?.status === 'failed' || current?.status === 'mint_failed') {
+      // All three mean the payment was received but processing did not finish;
+      // a concurrent recovery pass may have just flipped the row to mint_lost.
+      if (
+        current?.status === 'failed' ||
+        current?.status === 'mint_failed' ||
+        current?.status === 'mint_lost'
+      ) {
         return c.json<APIResponse<never>>(
           {
             success: false,
-            error: 'Payment processing failed. Please try again with a new invoice.',
+            error: 'Payment received but processing failed. Do not pay again — contact the seller.',
           },
           500
         );
