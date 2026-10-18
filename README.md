@@ -223,6 +223,22 @@ npm run lint --workspace=client
 docker compose up --build
 ```
 
+## Deployment
+
+Production runs the app behind Caddy, which handles HTTPS automatically. On an Ubuntu VM with
+ports 80 and 443 open and the domain's A record pointing at it:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+git clone https://github.com/keshav0479/Stashu.git && cd Stashu
+echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+echo "CORS_ORIGINS=https://stashu.tech" >> .env
+sudo docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Back up `TOKEN_ENCRYPTION_KEY` - sellers' unwithdrawn earnings can't be decrypted without it. To
+update, `git pull` and rerun the last command.
+
 ## Roadmap
 
 ### V1: Trusted Escrow

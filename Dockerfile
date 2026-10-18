@@ -17,6 +17,15 @@ RUN npm ci
 COPY client/ client/
 COPY server/ server/
 
+# Vite inlines these at build time, so they must be set before `npm run build`.
+# VITE_API_URL has to be absolute: the client copies it into the NIP-98 'u' tag,
+# and the server parses that tag with `new URL()`, which rejects relative paths.
+# These defaults match local development — override them for a real deployment.
+ARG VITE_API_URL=http://localhost:3000/api
+ARG VITE_BLOSSOM_URL=https://blossom.ditto.pub
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_BLOSSOM_URL=$VITE_BLOSSOM_URL
+
 # Build client (Vite) and server (tsc)
 RUN npm run build
 
