@@ -223,6 +223,11 @@ npm run lint --workspace=client
 docker compose up --build
 ```
 
+## Deployment
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the production setup behind Caddy with
+automatic TLS, plus the DNS records for stashu.tech.
+
 ## Roadmap
 
 ### V1: Trusted Escrow

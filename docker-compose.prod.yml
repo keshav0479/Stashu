@@ -1,0 +1,47 @@
+# Production stack: the app behind Caddy, which terminates TLS.
+#
+# Standalone on purpose — run it with `-f docker-compose.prod.yml` ALONE, never
+# layered over docker-compose.yml. Compose appends `ports` lists when merging
+# files, so layering would republish the app on :3000 and let traffic bypass TLS.
+services:
+  stashu:
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time. Must be absolute (NIP-98).
+        VITE_API_URL: ${VITE_API_URL:-https://stashu.tech/api}
+        VITE_BLOSSOM_URL: ${VITE_BLOSSOM_URL:-https://blossom.ditto.pub}
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/stashu.db
+      # Caddy sets X-Forwarded-For. Without this the rate limiter keys every
+      # client as 'global', so one visitor can throttle everybody.
+      - TRUSTED_PROXY=1
+    # No published ports: only Caddy reaches the app, over the compose network.
+    expose:
+      - '3000'
+    volumes:
+      - stashu-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - stashu
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persist issued certificates so restarts don't re-request them and hit
+      # Let's Encrypt rate limits.
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  stashu-data:
+  caddy-data:
+  caddy-config:
