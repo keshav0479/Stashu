@@ -1,9 +1,10 @@
 # Reverse proxy + automatic TLS for the Stashu production deployment.
 #
-# Caddy fetches and renews a Let's Encrypt certificate for every hostname
-# listed here, which means ports 80 and 443 must both be reachable from the
-# internet and DNS must already point at this machine. Only stashu.tech is
-# served — no other domain is answered on this box.
+# The site address is DOMAIN from .env, handed over by docker-compose.prod.yml.
+# Caddy fetches and renews a Let's Encrypt certificate for it, which means
+# ports 80 and 443 must both be reachable from the internet and DNS must
+# already point at this machine. Only that domain is served — no other domain
+# is answered on this box.
 #
 # To get certificate-expiry warnings by mail, add a global options block as the
 # very first thing in this file:
@@ -12,7 +13,7 @@
 #       email you@example.com
 #   }
 
-stashu.tech {
+{$DOMAIN} {
 	encode zstd gzip
 
 	# The app container serves both /api and the built client (SPA fallback),
@@ -21,6 +22,6 @@ stashu.tech {
 }
 
 # Canonical host: send the www form of the same domain to the apex.
-www.stashu.tech {
-	redir https://stashu.tech{uri} permanent
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
 }
