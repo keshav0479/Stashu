@@ -5,7 +5,7 @@
     <strong>Sell encrypted files for sats with previews buyers can verify.</strong>
   </p>
   <p>
-    <a href="https://stashu.tech">Website</a> &middot;
+    <a href="https://stashu.dev">Website</a> &middot;
     <a href="#how-it-works">How it works</a> &middot;
     <a href="#verified-peek">Verified Peek</a> &middot;
     <a href="#security-model">Security</a>
@@ -232,7 +232,7 @@ ports 80 and 443 open and the domain's A record pointing at it:
 curl -fsSL https://get.docker.com | sh
 git clone https://github.com/keshav0479/Stashu.git && cd Stashu
 echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
-echo "CORS_ORIGINS=https://stashu.tech" >> .env
+echo "DOMAIN=stashu.dev" >> .env
 sudo docker compose -f docker-compose.prod.yml up -d --build
 ```
 
