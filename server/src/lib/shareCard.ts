@@ -110,6 +110,128 @@ export async function isCardRendererAvailable(): Promise<boolean> {
   return (await loadResvg()) !== null;
 }
 
+/**
+ * Code points a font can draw, read from its cmap. Only format 4 is parsed —
+ * it is the only Unicode subtable Outfit ships. Returns null for anything
+ * else so the caller falls back to a conservative set instead of guessing.
+ */
+export function readCmapCoverage(font: Buffer): Set<number> | null {
+  const numTables = font.readUInt16BE(4);
+  let cmap = -1;
+  for (let i = 0; i < numTables; i++) {
+    const record = 12 + i * 16;
+    if (font.toString('latin1', record, record + 4) === 'cmap') {
+      cmap = font.readUInt32BE(record + 8);
+      break;
+    }
+  }
+  if (cmap < 0) return null;
+
+  const subtables = font.readUInt16BE(cmap + 2);
+  for (let i = 0; i < subtables; i++) {
+    const record = cmap + 4 + i * 8;
+    const platform = font.readUInt16BE(record);
+    const encoding = font.readUInt16BE(record + 2);
+    const table = cmap + font.readUInt32BE(record + 4);
+    const isUnicode = platform === 0 || (platform === 3 && encoding === 1);
+    if (!isUnicode || font.readUInt16BE(table) !== 4) continue;
+
+    const segments = font.readUInt16BE(table + 6) / 2;
+    const ends = table + 14;
+    const starts = ends + segments * 2 + 2;
+    const deltas = starts + segments * 2;
+    const rangeOffsets = deltas + segments * 2;
+    const covered = new Set<number>();
+
+    for (let seg = 0; seg < segments; seg++) {
+      const start = font.readUInt16BE(starts + seg * 2);
+      const end = font.readUInt16BE(ends + seg * 2);
+      const delta = font.readInt16BE(deltas + seg * 2);
+      const rangeOffsetAt = rangeOffsets + seg * 2;
+      const rangeOffset = font.readUInt16BE(rangeOffsetAt);
+
+      // 0xFFFF closes the last segment and never maps to a real glyph.
+      for (let code = start; code <= end && code !== 0xffff; code++) {
+        let glyph = (code + delta) & 0xffff;
+        if (rangeOffset !== 0) {
+          const raw = font.readUInt16BE(rangeOffsetAt + rangeOffset + (code - start) * 2);
+          glyph = raw === 0 ? 0 : (raw + delta) & 0xffff;
+        }
+        // Glyph 0 is .notdef — the tofu box itself.
+        if (glyph !== 0) covered.add(code);
+      }
+    }
+
+    return covered;
+  }
+
+  return null;
+}
+
+let glyphCoverage: Set<number> | null | undefined;
+
+function getGlyphCoverage(): Set<number> | null {
+  if (glyphCoverage !== undefined) return glyphCoverage;
+
+  try {
+    glyphCoverage = FONT_DIR
+      ? readCmapCoverage(readFileSync(path.join(FONT_DIR, 'Outfit-Bold.ttf')))
+      : null;
+  } catch {
+    glyphCoverage = null;
+  }
+
+  return glyphCoverage;
+}
+
+/**
+ * Whether the card font has a glyph for this code point. Without a readable
+ * cmap it falls back to Latin-1, which any Latin face covers: better to drop
+ * a rare letter than to draw a tofu box in its place.
+ */
+export function canDraw(codePoint: number): boolean {
+  const coverage = getGlyphCoverage();
+  if (coverage) return coverage.has(codePoint);
+  return (codePoint >= 0x20 && codePoint <= 0x7e) || (codePoint >= 0xa0 && codePoint <= 0xff);
+}
+
+// Below this share of drawable letters a title is mostly in a script the font
+// lacks, and what survives would be a misleading fragment ("Курс по Blender"
+// -> "Blender"). The card then leaves the title off; the og:title text under
+// the image still carries it in full, in the viewer's own system font.
+const MIN_DRAWABLE_LETTER_SHARE = 0.5;
+
+/**
+ * The title as the card can draw it: characters the font lacks (emoji, other
+ * scripts) are dropped instead of rendered as tofu, and null means the title
+ * is better left off the card entirely.
+ */
+export function cardTitle(title: string): string | null {
+  let drawable = '';
+  let letters = 0;
+  let drawableLetters = 0;
+
+  for (const char of title) {
+    if (/\s/.test(char)) {
+      drawable += ' ';
+      continue;
+    }
+
+    const isLetter = /[\p{L}\p{N}]/u.test(char);
+    if (isLetter) letters++;
+
+    if (canDraw(char.codePointAt(0)!)) {
+      drawable += char;
+      if (isLetter) drawableLetters++;
+    }
+  }
+
+  const cleaned = drawable.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return null;
+  if (letters > 0 && drawableLetters / letters < MIN_DRAWABLE_LETTER_SHARE) return null;
+  return cleaned;
+}
+
 // Per-character advance widths as a fraction of font size, measured against
 // rendered Outfit Bold — the only wrapped text on the card. Deliberately a
 // little generous: overestimating wraps a word early, while underestimating
@@ -130,8 +252,10 @@ function estimateTextWidth(text: string, fontSize: number): number {
 }
 
 /**
- * Greedy word wrap to at most `maxLines`, ellipsising the final line. Words
- * longer than a line are hard-split so a pasted URL cannot overflow the card.
+ * Greedy word wrap to at most `maxLines`. A word wider than a whole line is
+ * broken across lines so a pasted URL wraps instead of running off the card,
+ * and text that still overflows ends in an ellipsis — on a word boundary when
+ * the last line has one.
  */
 export function wrapText(
   text: string,
@@ -139,63 +263,42 @@ export function wrapText(
   maxWidth: number,
   maxLines: number
 ): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
-
+  const fits = (line: string) => estimateTextWidth(line, fontSize) <= maxWidth;
   const lines: string[] = [];
   let current = '';
 
-  for (const word of words) {
+  for (const word of text.split(/\s+/).filter(Boolean)) {
     const candidate = current ? `${current} ${word}` : word;
-
-    if (estimateTextWidth(candidate, fontSize) <= maxWidth) {
+    if (fits(candidate)) {
       current = candidate;
       continue;
     }
 
     if (current) lines.push(current);
-
-    if (lines.length === maxLines) {
-      return ellipsiseLast(lines, word, fontSize, maxWidth);
-    }
-
-    // A single word too wide for its own line: cut it down to fit.
-    current = word;
-    while (estimateTextWidth(current, fontSize) > maxWidth && current.length > 1) {
-      current = current.slice(0, -1);
+    current = '';
+    // Iterating by code point keeps surrogate pairs whole when a word breaks.
+    for (const char of word) {
+      if (current && !fits(current + char)) {
+        lines.push(current);
+        current = '';
+      }
+      current += char;
     }
   }
-
   if (current) lines.push(current);
-  return lines.slice(0, maxLines);
-}
 
-/** Append an ellipsis to the last line, trimming until it fits. */
-function ellipsiseLast(
-  lines: string[],
-  overflowWord: string,
-  fontSize: number,
-  maxWidth: number
-): string[] {
-  const result = [...lines];
-  let last = result[result.length - 1];
+  if (lines.length <= maxLines) return lines;
 
-  // Signal the cut with the first overflowing word when there is room.
-  let candidate = `${last} ${overflowWord}`;
-  while (
-    candidate.length > last.length &&
-    estimateTextWidth(`${candidate}…`, fontSize) > maxWidth
-  ) {
-    candidate = candidate.slice(0, -1);
+  const kept = lines.slice(0, maxLines);
+  let last = kept[maxLines - 1];
+  while (!fits(`${last}…`) && last.includes(' ')) {
+    last = last.slice(0, last.lastIndexOf(' '));
   }
-  last = candidate.length > last.length ? candidate : last;
-
-  while (estimateTextWidth(`${last}…`, fontSize) > maxWidth && last.length > 1) {
-    last = last.slice(0, -1);
-  }
-
-  result[result.length - 1] = `${last.trimEnd()}…`;
-  return result;
+  // One overlong word has no boundary to fall back on, so cut inside it.
+  const chars = Array.from(last);
+  while (chars.length > 1 && !fits(`${chars.join('')}…`)) chars.pop();
+  kept[maxLines - 1] = `${chars.join('').trimEnd()}…`;
+  return kept;
 }
 
 export interface CardContent {
@@ -226,12 +329,8 @@ function textEl(
  */
 export function buildCardSvg(content: CardContent): string {
   const contentWidth = CARD_WIDTH - PADDING * 2;
-  const titleLines = wrapText(
-    content.title.trim() || 'Untitled stash',
-    TITLE_SIZE,
-    contentWidth,
-    MAX_TITLE_LINES
-  );
+  const title = cardTitle(content.title.trim() || 'Untitled stash');
+  const titleLines = title ? wrapText(title, TITLE_SIZE, contentWidth, MAX_TITLE_LINES) : [];
 
   // Pin the title block's baseline to the bottom so one- and two-line titles
   // both sit above the price rather than drifting.

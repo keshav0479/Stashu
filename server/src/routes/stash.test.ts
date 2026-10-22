@@ -179,6 +179,14 @@ describe('POST /api/stash', () => {
       }
     });
 
+    it('rejects a non-string previewUrl with a 400, not a 500', async () => {
+      // new URL() stringifies an array, so this one used to reach the insert.
+      for (const previewUrl of [['https://blossom.example.com/card.png'], { href: 'x' }, 42]) {
+        const res = await createStash({ ...validBody(), previewUrl });
+        assert.equal(res.status, 400, `accepted ${JSON.stringify(previewUrl)}`);
+      }
+    });
+
     it('rejects credentials embedded in the URL', async () => {
       const res = await createStash({
         ...validBody(),

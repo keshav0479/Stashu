@@ -10,7 +10,7 @@ import { withdrawRoutes } from './routes/withdraw.js';
 import { payRoutes } from './routes/pay.js';
 import { settingsRoutes } from './routes/settings.js';
 import { sellerRoutes } from './routes/seller.js';
-import { shareCardHandler, shareCardImageHandler } from './routes/share.js';
+import { registerShareRoutes } from './routes/share.js';
 import { requireAuth } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';
 import { requestBodyLimit } from './middleware/requestBodyLimit.js';
@@ -94,11 +94,7 @@ if (process.env.NODE_ENV === 'production') {
   // Per-stash share cards. Registered ahead of the static handlers so a
   // crawler asking for a stash link gets that stash's Open Graph tags rather
   // than the generic ones compiled into index.html.
-  // The image route is rate limited because, unlike the rest of the static
-  // tree, every hit rasterises a 1200x630 PNG.
-  app.use('/s/:id/card.png', rateLimit(60_000, 60));
-  app.get('/s/:id/card.png', shareCardImageHandler);
-  app.get('/s/:id', shareCardHandler);
+  registerShareRoutes(app);
 
   app.use('/*', serveStatic({ root: './client/dist' }));
 

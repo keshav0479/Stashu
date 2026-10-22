@@ -438,6 +438,14 @@ stashRoutes.post('/', async (c) => {
     // tags, so it has to be a public image URL and nothing more exotic —
     // javascript:, data: and private-network hosts are all rejected.
     if (body.previewUrl) {
+      // new URL() stringifies its argument, so an array like ['https://…']
+      // would pass the parse below and then crash the insert with a 500.
+      if (typeof body.previewUrl !== 'string') {
+        return c.json<APIResponse<never>>(
+          { success: false, error: 'previewUrl must be a string' },
+          400
+        );
+      }
       if (body.previewUrl.length > MAX_PREVIEW_URL_LENGTH) {
         return c.json<APIResponse<never>>(
           { success: false, error: 'previewUrl exceeds 2000 characters' },

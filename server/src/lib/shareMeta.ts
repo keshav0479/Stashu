@@ -210,19 +210,23 @@ function isReplaceableMetaTag(tag: string): boolean {
  * existing <title>, description, og:* and twitter:* tags — leaving two
  * og:title tags in place would let the crawler pick either one — then splices
  * the new block in before </head>.
+ *
+ * Only the head is rewritten. The body belongs to the app: a <title> inside
+ * an inline SVG, or a blank line inside a script, is not ours to remove.
  */
 export function injectHeadMeta(html: string, metaHtml: string): string {
-  const stripped = html
+  const headClose = html.search(/<\/head>/i);
+  if (headClose === -1) return `${html}\n${metaHtml}`;
+
+  const head = html
+    .slice(0, headClose)
     .replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, '')
     .replace(/<meta\b[^>]*?>/gi, (tag) => (isReplaceableMetaTag(tag) ? '' : tag))
     // Collapse the blank lines the strips leave behind.
-    .replace(/^[ \t]*\r?\n/gm, '');
+    .replace(/^[ \t]*\r?\n/gm, '')
+    // Drop the indentation sitting in front of </head> so the injected block
+    // keeps its own instead of inheriting it.
+    .replace(/[ \t]*$/, '');
 
-  const headClose = stripped.search(/<\/head>/i);
-  if (headClose === -1) return `${stripped}\n${metaHtml}`;
-
-  // Drop the indentation sitting in front of </head> so the injected block
-  // keeps its own instead of inheriting it.
-  const before = stripped.slice(0, headClose).replace(/[ \t]*$/, '');
-  return `${before}${metaHtml}\n  ${stripped.slice(headClose)}`;
+  return `${head}${metaHtml}\n  ${html.slice(headClose)}`;
 }

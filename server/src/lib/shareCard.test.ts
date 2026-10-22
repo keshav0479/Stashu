@@ -6,11 +6,15 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
   buildCardSvg,
+  canDraw,
+  cardTitle,
   isCardRendererAvailable,
+  readCmapCoverage,
   renderCardPng,
   wrapText,
   type CardContent,
@@ -60,13 +64,100 @@ describe('wrapText', () => {
     assert.ok(lines[1].endsWith('…'), `expected an ellipsis, got ${JSON.stringify(lines[1])}`);
   });
 
-  it('hard-splits a single word too wide for the card', () => {
+  it('breaks a word too wide for the card across lines, ending in an ellipsis', () => {
     // A pasted URL has no spaces to break on and would otherwise run off the edge.
     const lines = wrapText(`https://example.com/${'a'.repeat(300)}`, 62, 1048, 2);
 
-    assert.ok(lines.length <= 2);
+    assert.equal(lines.length, 2, 'the overflow should spill onto the second line');
+    assert.ok(lines[0].startsWith('https://example.com/'));
+    assert.ok(lines[1].endsWith('…'), 'the cut should be marked, not silent');
     for (const line of lines) {
-      assert.ok(line.length < 120, `line is implausibly long: ${line.length}`);
+      assert.ok(line.length < 60, `line is implausibly long: ${line.length}`);
+    }
+  });
+
+  it('cuts at a word boundary rather than mid-word when it can', () => {
+    const lines = wrapText(
+      'Complete Lightroom Presets Pack for Moody Film Photography and Portrait Retouching Workflows',
+      62,
+      1048,
+      2
+    );
+
+    assert.equal(lines.length, 2);
+    // Every word before the ellipsis is whole.
+    const words = lines[1].slice(0, -1).split(' ');
+    const source = new Set('for Moody Film Photography and Portrait'.split(' '));
+    assert.ok(
+      words.every((word) => source.has(word)),
+      `cut mid-word: ${lines[1]}`
+    );
+  });
+
+  it('never splits a surrogate pair when it breaks a word', () => {
+    const lines = wrapText('𝐀'.repeat(200), 62, 1048, 2);
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+    for (const line of lines) {
+      assert.ok(!loneSurrogate.test(line), 'a surrogate pair was split');
+    }
+  });
+});
+
+describe('readCmapCoverage', () => {
+  const fontPath = new URL('../../assets/fonts/Outfit-Bold.ttf', import.meta.url);
+  const coverage = readCmapCoverage(readFileSync(fontPath));
+
+  it('reads every code point the vendored font maps', () => {
+    // fontTools reports 360 mapped code points for this face.
+    assert.equal(coverage?.size, 360);
+  });
+
+  it('covers Latin and the punctuation the card draws', () => {
+    for (const char of 'Az09éßŁ…·—') {
+      assert.ok(coverage?.has(char.codePointAt(0)!), `missing ${char}`);
+    }
+  });
+
+  it('does not claim scripts or emoji the font lacks', () => {
+    for (const char of ['Ж', '中', 'ع', '🐿', '️']) {
+      assert.ok(!coverage?.has(char.codePointAt(0)!), `claimed ${char}`);
+    }
+  });
+
+  it('returns null for bytes that are not a font', () => {
+    assert.equal(readCmapCoverage(Buffer.alloc(64)), null);
+  });
+});
+
+describe('cardTitle', () => {
+  it('drops emoji instead of drawing them as tofu boxes', () => {
+    assert.equal(cardTitle('Squirrel pack 🐿️🐿️ with extras'), 'Squirrel pack with extras');
+    assert.equal(cardTitle('🎨 Procreate Brush Pack'), 'Procreate Brush Pack');
+  });
+
+  it('keeps accented Latin', () => {
+    assert.equal(cardTitle('Café Crème Brûlée'), 'Café Crème Brûlée');
+  });
+
+  it('leaves off a title that is mostly in a script the font lacks', () => {
+    // Showing just "Blender" would misrepresent the stash.
+    assert.equal(cardTitle('Курс по Blender для начинающих'), null);
+    assert.equal(cardTitle('中文教程合集'), null);
+  });
+
+  it('leaves off a title made only of emoji', () => {
+    assert.equal(cardTitle('🐿️🐿️'), null);
+  });
+
+  it('keeps a title with no letters at all', () => {
+    assert.equal(cardTitle('$$$ 100% !!!'), '$$$ 100% !!!');
+  });
+
+  it('only ever returns characters the font can draw', () => {
+    const title = cardTitle('Mixed: Ünïcødé, 日本, emoji 🎉 and — dashes') ?? '';
+    for (const char of title) {
+      assert.ok(canDraw(char.codePointAt(0)!), `undrawable ${JSON.stringify(char)} survived`);
     }
   });
 });
@@ -98,6 +189,14 @@ describe('buildCardSvg', () => {
 
   it('falls back to a placeholder title', () => {
     assert.ok(buildCardSvg(content({ title: '   ' })).includes('Untitled stash'));
+  });
+
+  it('leaves the title off rather than drawing tofu for an undrawable one', () => {
+    const svg = buildCardSvg(content({ title: 'Курс по Blender для начинающих' }));
+
+    assert.ok(!svg.includes('Курс'), 'Cyrillic reached the SVG');
+    assert.ok(!svg.includes('>Blender<'), 'a misleading fragment reached the SVG');
+    assert.ok(svg.includes('2,000 sats'), 'the rest of the card should still render');
   });
 
   it('omits the file type when the name has no extension', () => {

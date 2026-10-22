@@ -281,6 +281,24 @@ describe('injectHeadMeta', () => {
     assert.ok(result.includes('<p>no head here</p>'));
     assert.ok(result.includes('name="x"'));
   });
+
+  it('never touches the body', () => {
+    const body = `<body>
+    <svg role="img"><title>Squirrel</title></svg>
+    <meta property="og:title" content="not in the head, so not ours" />
+
+    <script>const poem = \`line one
+
+line three\`;</script>
+  </body>`;
+    const html = INDEX_HTML.replace(/<body>[\s\S]*<\/body>/, body);
+    const result = injectHeadMeta(
+      html,
+      buildStashShareMeta(stash(), 'https://stashu.dev', RENDERED_CARD)
+    );
+
+    assert.ok(result.endsWith(html.slice(html.indexOf('</head>'))), 'the body was rewritten');
+  });
 });
 
 describe('resolvePublicOrigin', () => {
