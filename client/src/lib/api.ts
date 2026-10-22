@@ -2,6 +2,9 @@ import type {
   APIResponse,
   CreateStashRequest,
   CreateStashResponse,
+  DeleteStashResponse,
+  UpdateStashRequest,
+  UpdateStashResponse,
   StashPublicInfo,
   UnlockRequest,
   UnlockResponse,
@@ -38,6 +41,56 @@ export async function createStash(request: CreateStashRequest): Promise<CreateSt
 
   if (!result.success) {
     throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Edit one of the seller's stashes, or stop and restart its sales. Send only
+ * what changes.
+ */
+export async function updateStash(
+  stashId: string,
+  changes: UpdateStashRequest
+): Promise<UpdateStashResponse> {
+  const url = `${API_BASE}/stash/${stashId}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'PATCH'),
+    },
+    body: JSON.stringify(changes),
+  });
+
+  const result: APIResponse<UpdateStashResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Delete one of the seller's stashes for good. Resolves with where its file
+ * is stored, so the caller can delete it from Blossom too. A 409 means a
+ * payment may still be in flight; the error carries the status.
+ */
+export async function deleteStash(stashId: string): Promise<DeleteStashResponse> {
+  const url = `${API_BASE}/stash/${stashId}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: createAuthHeader(url, 'DELETE') },
+  });
+
+  const result: APIResponse<DeleteStashResponse> = await response.json();
+
+  if (!result.success) {
+    const err = new Error(result.error) as Error & { status: number };
+    err.status = response.status;
+    throw err;
   }
 
   return result.data;

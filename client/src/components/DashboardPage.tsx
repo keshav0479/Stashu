@@ -11,6 +11,7 @@ import {
   Link as LinkIcon,
   Store,
   Plus,
+  Pencil,
 } from 'lucide-react';
 import { getDashboard, getSettlements, toggleStashVisibility } from '../lib/api';
 import { getPublicKeyHex, getOrCreateIdentity, hasIdentity } from '../lib/identity';
@@ -18,6 +19,7 @@ import { useToast } from './useToast';
 import { copyToClipboard } from '../lib/clipboard';
 import { WithdrawModal } from './WithdrawModal';
 import { SettlementHistoryModal } from './SettlementHistoryModal';
+import { ManageStashModal } from './ManageStashModal';
 import type {
   DashboardResponse,
   SellerStashStats,
@@ -34,6 +36,8 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // By id, so the open modal follows the stash through dashboard refreshes.
+  const [managingId, setManagingId] = useState<string | null>(null);
   const [settlements, setSettlements] = useState<SettlementLogEntry[]>([]);
   const toast = useToast();
 
@@ -223,10 +227,11 @@ export function DashboardPage() {
   const hasEarnings = data && data.earnings.totalSats > 0;
   const hasStashes = data && data.stashes.length > 0;
 
-  // Calculate Gross Revenue (sum of all stash earnings)
-  const totalRevenue = data?.stashes.reduce((sum, s) => sum + s.totalEarned, 0) || 0;
+  // Gross revenue, deleted stashes included
+  const totalRevenue = data?.totalRevenueSats || 0;
   // Current Balance (unclaimed)
   const availableBalance = data?.earnings.totalSats || 0;
+  const managing = data?.stashes.find((s) => s.id === managingId);
 
   return (
     <div className="min-h-screen bg-slate-900 py-12 px-6">
@@ -372,10 +377,21 @@ export function DashboardPage() {
                   className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 hover:border-slate-600 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="flex-1 w-full sm:w-auto">
-                      <h3 className="text-lg font-semibold text-white mb-1 truncate">
-                        {stash.title}
-                      </h3>
+                    <div className="flex-1 w-full sm:w-auto min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3
+                          className={`text-lg font-semibold truncate ${
+                            stash.published ? 'text-white' : 'text-slate-400'
+                          }`}
+                        >
+                          {stash.title}
+                        </h3>
+                        {!stash.published && (
+                          <span className="shrink-0 rounded-full border border-slate-600 bg-slate-700/50 px-2 py-0.5 text-xs font-medium text-slate-300">
+                            Unpublished
+                          </span>
+                        )}
+                      </div>
                       <p className="text-slate-500 text-sm">
                         Created {formatDate(stash.createdAt)} •{' '}
                         {stash.payWhatYouWant ? 'from ' : ''}
@@ -398,63 +414,75 @@ export function DashboardPage() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={async () => {
-                          const newValue = !stash.showInStorefront;
-                          try {
-                            await toggleStashVisibility(stash.id, newValue);
-                            stash.showInStorefront = newValue;
-                            setData({ ...data! });
-                            toast.showToast(
-                              newValue ? 'Visible in storefront' : 'Hidden from storefront',
-                              'success'
-                            );
-                          } catch {
-                            toast.showToast('Failed to update visibility', 'error');
-                          }
-                        }}
-                        disabled={!data!.storefrontEnabled}
-                        className={`p-2 rounded-lg transition-colors ${
-                          !data!.storefrontEnabled
-                            ? 'bg-slate-800 cursor-not-allowed opacity-50'
-                            : stash.showInStorefront
-                              ? 'bg-violet-500/20 hover:bg-violet-500/30'
-                              : 'bg-slate-700 hover:bg-slate-600'
-                        }`}
-                        title={
-                          !data!.storefrontEnabled
-                            ? 'Enable your public storefront in Settings first'
-                            : stash.showInStorefront
-                              ? 'Visible in storefront — click to hide'
-                              : 'Hidden from storefront — click to show'
-                        }
-                      >
-                        <Store
-                          className={`w-5 h-5 ${
-                            !data!.storefrontEnabled
-                              ? 'text-slate-600'
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            const newValue = !stash.showInStorefront;
+                            try {
+                              await toggleStashVisibility(stash.id, newValue);
+                              stash.showInStorefront = newValue;
+                              setData({ ...data! });
+                              toast.showToast(
+                                newValue ? 'Visible in storefront' : 'Hidden from storefront',
+                                'success'
+                              );
+                            } catch {
+                              toast.showToast('Failed to update visibility', 'error');
+                            }
+                          }}
+                          disabled={!data!.storefrontEnabled || !stash.published}
+                          className={`p-2 rounded-lg transition-colors ${
+                            !data!.storefrontEnabled || !stash.published
+                              ? 'bg-slate-800 cursor-not-allowed opacity-50'
                               : stash.showInStorefront
-                                ? 'text-violet-400'
-                                : 'text-slate-500'
+                                ? 'bg-violet-500/20 hover:bg-violet-500/30'
+                                : 'bg-slate-700 hover:bg-slate-600'
                           }`}
-                        />
-                      </button>
-
-                      <button
-                        onClick={async () => {
-                          const url = `${window.location.origin}/s/${stash.id}`;
-                          const success = await copyToClipboard(url);
-                          if (success) {
-                            toast.showToast('Link copied!', 'success');
-                          } else {
-                            toast.showToast('Failed to copy link', 'error');
+                          title={
+                            !data!.storefrontEnabled
+                              ? 'Enable your public storefront in Settings first'
+                              : !stash.published
+                                ? 'Unpublished stashes are never shown in your storefront'
+                                : stash.showInStorefront
+                                  ? 'Visible in storefront — click to hide'
+                                  : 'Hidden from storefront — click to show'
                           }
-                        }}
-                        className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-                        title="Copy Link"
-                      >
-                        <LinkIcon className="w-5 h-5 text-slate-300" />
-                      </button>
+                        >
+                          <Store
+                            className={`w-5 h-5 ${
+                              !data!.storefrontEnabled || !stash.published
+                                ? 'text-slate-600'
+                                : stash.showInStorefront
+                                  ? 'text-violet-400'
+                                  : 'text-slate-500'
+                            }`}
+                          />
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            const url = `${window.location.origin}/s/${stash.id}`;
+                            const success = await copyToClipboard(url);
+                            if (success) {
+                              toast.showToast('Link copied!', 'success');
+                            } else {
+                              toast.showToast('Failed to copy link', 'error');
+                            }
+                          }}
+                          className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                          title="Copy Link"
+                        >
+                          <LinkIcon className="w-5 h-5 text-slate-300" />
+                        </button>
+
+                        <button
+                          onClick={() => setManagingId(stash.id)}
+                          className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                          title="Edit, unpublish or delete"
+                        >
+                          <Pencil className="w-5 h-5 text-slate-300" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -475,6 +503,16 @@ export function DashboardPage() {
           totalSats={data.earnings.totalSats}
           onClose={() => setShowWithdraw(false)}
           onSuccess={refreshDashboard}
+        />
+      )}
+
+      {/* Edit / unpublish / delete */}
+      {managing && (
+        <ManageStashModal
+          key={managing.id}
+          stash={managing}
+          onClose={() => setManagingId(null)}
+          onChanged={refreshDashboard}
         />
       )}
     </div>

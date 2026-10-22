@@ -15,7 +15,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Context, Hono, Next } from 'hono';
-import db from '../db/index.js';
+import db, { STASH_FOR_SALE_SQL } from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
 import { rateLimit } from '../middleware/ratelimit.js';
 import {
@@ -66,12 +66,13 @@ type ShareStashRow = Pick<
 >;
 
 // Only ever selects public columns — secret_key, preview_secret and blob_url
-// must never be read here.
+// must never be read here. A stash that isn't for sale gets the generic card
+// rather than one advertising a price nobody can pay.
 function getShareStash(id: string): StashShareInfo | null {
   const row = db
     .prepare(
       `SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want, preview_url
-       FROM stashes WHERE id = ?`
+       FROM stashes WHERE id = ? AND ${STASH_FOR_SALE_SQL}`
     )
     .get(id) as ShareStashRow | null;
 

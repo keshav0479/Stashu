@@ -150,6 +150,12 @@ after a valid unlock.
   Each payment records the amount it credits, decided by the server: a
   pay-what-you-want buyer can't pay under the minimum, and a Cashu token must
   match the chosen amount exactly, so pasting the wrong token can't overpay.
+- **Stash lifecycle** changes are NIP-98 signed and limited to the seller's own
+  stashes. Editing changes the text and price, never the file or its proofs, and
+  a new price never changes what earlier payments credit. Unpublishing stops new
+  payments but lets open invoices complete and past buyers re-download. Deleting
+  wipes the file key, blob location and metadata from the database, keeping only
+  what payments still need, and waits out any invoice that could still be paid.
 - **Rate limiting** protects public unlock, payment, stash, and seller routes.
 
 ### Known Limits
@@ -166,6 +172,7 @@ after a valid unlock.
 | Single mint dependency | The server currently uses one configured Cashu mint through `MINT_URL`.                                                                                                                                                                                                                                                                                                                                                                                 |
 | Re-download window     | Buyers re-download with a per-device claim token in browser local storage that expires after the seller's window (1-30 days, default 7). It is not a shareable link, so clearing the browser ends re-download access.                                                                                                                                                                                                                                   |
 | Share card metadata    | A stash link is served with Open Graph tags, and `/s/:id/card.png` renders the title, price and file size into a public image, so chat apps and Nostr clients preview the real stash. Those fields were already public through the stash API and the card adds no new ones, but link previews hand them to crawlers and chat providers, so the title should never itself be the secret. Seller text is escaped before it reaches the page or the image. |
+| Deleting a stash       | Deleting wipes Stashu's copy of the file key, but can't recall files buyers already downloaded or database backups taken before it. Only the seller's key can delete the blob itself: their browser asks the upload server and mirrors to (BUD-12), and one that is down or refuses keeps a copy nobody can decrypt. Buyers still inside their re-download window lose it.                                                                              |
 | Blob storage trust     | Sealed blobs live on public Blossom servers (default presets: Ditto, Data Haus) that publish no retention guarantee or SLA and can change upload policy at any time — blossom.primal.net did exactly that and now rejects encrypted blobs. Uploads fail over across presets and mirror for redundancy, but sellers should keep their original files. Self-hosting a Blossom server is the reliable option.                                              |
 
 ## Quick Start

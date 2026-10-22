@@ -15,19 +15,23 @@ dashboardRoutes.get('/:pubkey', async (c) => {
   try {
     const pubkey = c.get('authedPubkey');
 
+    // Deleted stashes are wiped and left out; their sales still count towards
+    // the balance and revenue below.
     const stashesStmt = db.prepare(`
       SELECT
         s.id,
         s.title,
+        s.description,
         s.price_sats,
         s.pay_what_you_want,
+        s.published,
         s.created_at,
         s.show_in_storefront,
         COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as unlock_count,
         COALESCE(SUM(CASE WHEN p.status = 'paid' THEN ${PAYMENT_AMOUNT_SQL} ELSE 0 END), 0) as total_earned
       FROM stashes s
       LEFT JOIN payments p ON s.id = p.stash_id
-      WHERE s.seller_pubkey = ?
+      WHERE s.seller_pubkey = ? AND s.deleted_at IS NULL
       GROUP BY s.id
       ORDER BY s.created_at DESC
     `);
@@ -35,8 +39,10 @@ dashboardRoutes.get('/:pubkey', async (c) => {
     const stashRows = stashesStmt.all(pubkey) as Array<{
       id: string;
       title: string;
+      description: string | null;
       price_sats: number;
       pay_what_you_want: number;
+      published: number;
       created_at: number;
       show_in_storefront: number;
       unlock_count: number;
@@ -46,8 +52,10 @@ dashboardRoutes.get('/:pubkey', async (c) => {
     const stashes: SellerStashStats[] = stashRows.map((row) => ({
       id: row.id,
       title: decrypt(row.title),
+      description: row.description ? decrypt(row.description) : undefined,
       priceSats: row.price_sats,
       payWhatYouWant: row.pay_what_you_want === 1,
+      published: row.published === 1,
       unlockCount: row.unlock_count,
       totalEarned: row.total_earned,
       createdAt: row.created_at,
@@ -69,6 +77,15 @@ dashboardRoutes.get('/:pubkey', async (c) => {
     const tokens = tokenRows.map((r) => decrypt(r.seller_token));
     const totalSats = tokenRows.reduce((sum, r) => sum + r.amount_sats, 0);
 
+    const { revenue } = db
+      .prepare(
+        `SELECT COALESCE(SUM(${PAYMENT_AMOUNT_SQL}), 0) AS revenue
+         FROM payments p
+         JOIN stashes s ON p.stash_id = s.id
+         WHERE s.seller_pubkey = ? AND p.status = 'paid'`
+      )
+      .get(pubkey) as { revenue: number };
+
     const settingsRow = db
       .prepare('SELECT storefront_enabled FROM seller_settings WHERE pubkey = ?')
       .get(pubkey) as { storefront_enabled: number } | undefined;
@@ -78,6 +95,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
       data: {
         stashes,
         earnings: { tokens, totalSats },
+        totalRevenueSats: revenue,
         storefrontEnabled: settingsRow?.storefront_enabled === 1,
       },
     });

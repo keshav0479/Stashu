@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Clock,
+  PackageX,
 } from 'lucide-react';
 import { useUnlock } from '../lib/useUnlock';
 import { createPayInvoice, checkPayStatus } from '../lib/api';
@@ -101,6 +102,9 @@ export function UnlockPage() {
       : null;
   // What this buyer pays: the chosen amount, or the price. Null while invalid.
   const payAmount = payWhatYouWant ? (amountError ? null : typedAmount) : priceSats;
+  // The seller unpublished it. Nothing new can be paid, but an invoice this
+  // buyer already opened still completes, and claim tokens still re-download.
+  const notForSale = unlock.stash?.published === false;
 
   useEffect(() => {
     if (id) {
@@ -296,8 +300,9 @@ export function UnlockPage() {
     }
 
     // A pay-what-you-want buyer picks the amount first, so a new invoice waits
-    // for their click; only one they already started is picked back up.
-    if (unlock.stash.payWhatYouWant) {
+    // for their click; only one they already started is picked back up. A
+    // stash that isn't for sale gets no new invoice at all.
+    if (unlock.stash.payWhatYouWant || notForSale) {
       resumeSavedInvoice();
       return;
     }
@@ -313,6 +318,7 @@ export function UnlockPage() {
     startOrResumeInvoice,
     resumeSavedInvoice,
     previewProofInvalid,
+    notForSale,
   ]);
 
   const clearInvoice = () => {
@@ -714,7 +720,20 @@ export function UnlockPage() {
           )}
         </div>
 
-        {!previewProofInvalid && (
+        {!previewProofInvalid && notForSale && !invoice && (
+          <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 bg-slate-700/60 rounded-xl flex items-center justify-center">
+              <PackageX className="w-6 h-6 text-slate-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-white mb-2">Not for sale right now</h2>
+            <p className="text-slate-400 text-sm">
+              The seller has stopped selling this stash. Already bought it? Open this link on the
+              device you paid with to download it again.
+            </p>
+          </div>
+        )}
+
+        {!previewProofInvalid && !(notForSale && !invoice) && (
           <>
             {payWhatYouWant && (
               <AmountPicker

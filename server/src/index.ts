@@ -50,7 +50,7 @@ app.use(
   '*',
   cors({
     origin: corsOrigins,
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -68,10 +68,12 @@ app.use('/api/pay/*', rateLimit(60_000, 60)); // 60 req/min (client polls every 
 app.route('/api/unlock', unlockRoutes);
 app.route('/api/pay', payRoutes);
 
-// Stash routes — GET is public (buyer preview), POST requires auth (prevents spoofing)
+// Stash routes — GET is public (buyer preview), every change requires auth (prevents spoofing)
 app.use('/api/stash/*', rateLimit(60_000, 10)); // 10 req/min
 app.post('/api/stash', requireAuth); // Auth only on creation, not preview
 app.post('/api/stash/:id/visibility', requireAuth); // Auth on visibility toggle
+app.patch('/api/stash/:id', requireAuth); // Edit, unpublish, publish
+app.delete('/api/stash/:id', requireAuth);
 app.route('/api/stash', stashRoutes);
 
 // Seller storefront — public, no auth
