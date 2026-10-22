@@ -15,7 +15,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Context, Hono, Next } from 'hono';
-import db from '../db/index.js';
+import db, { STASH_FOR_SALE_SQL } from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
 import { rateLimit } from '../middleware/ratelimit.js';
 import {
@@ -55,16 +55,24 @@ async function loadIndexHtml(): Promise<string | null> {
 
 type ShareStashRow = Pick<
   StashRow,
-  'id' | 'title' | 'description' | 'file_name' | 'file_size' | 'price_sats' | 'preview_url'
+  | 'id'
+  | 'title'
+  | 'description'
+  | 'file_name'
+  | 'file_size'
+  | 'price_sats'
+  | 'pay_what_you_want'
+  | 'preview_url'
 >;
 
 // Only ever selects public columns — secret_key, preview_secret and blob_url
-// must never be read here.
+// must never be read here. A stash that isn't for sale gets the generic card
+// rather than one advertising a price nobody can pay.
 function getShareStash(id: string): StashShareInfo | null {
   const row = db
     .prepare(
-      `SELECT id, title, description, file_name, file_size, price_sats, preview_url
-       FROM stashes WHERE id = ?`
+      `SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want, preview_url
+       FROM stashes WHERE id = ? AND ${STASH_FOR_SALE_SQL}`
     )
     .get(id) as ShareStashRow | null;
 
@@ -77,6 +85,7 @@ function getShareStash(id: string): StashShareInfo | null {
     fileName: decrypt(row.file_name),
     fileSize: row.file_size,
     priceSats: row.price_sats,
+    payWhatYouWant: row.pay_what_you_want === 1,
     previewUrl: row.preview_url ?? undefined,
   };
 }
@@ -167,6 +176,7 @@ export async function shareCardImageHandler(c: Context): Promise<Response> {
         fileName: stash.fileName,
         fileSize: stash.fileSize,
         priceSats: stash.priceSats,
+        payWhatYouWant: stash.payWhatYouWant,
       });
 
       if (png) {

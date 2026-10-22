@@ -404,6 +404,31 @@ const currentVersion = (
         console.log('Added blob_format column for sealed selective-reveal packages.');
       },
     },
+    {
+      version: 13,
+      name: 'add pay-what-you-want pricing',
+      run: () => {
+        // When 1, price_sats is the minimum rather than the price.
+        db.exec(`ALTER TABLE stashes ADD COLUMN pay_what_you_want INTEGER DEFAULT 0`);
+        // What each payment actually credited. Rows from before this migration
+        // stay NULL: they were always exactly the stash price (see
+        // PAYMENT_AMOUNT_SQL).
+        db.exec(`ALTER TABLE payments ADD COLUMN amount_sats INTEGER DEFAULT NULL`);
+        console.log('💸 Added pay-what-you-want pricing and per-payment amounts.');
+      },
+    },
+    {
+      version: 14,
+      name: 'add publish and delete state to stashes',
+      run: () => {
+        // 0 stops new sales; buyers who already paid can still re-download.
+        db.exec(`ALTER TABLE stashes ADD COLUMN published INTEGER DEFAULT 1`);
+        // Set when the seller deletes the stash. The row stays, wiped down to
+        // what its payments still need, so earnings and recovery keep working.
+        db.exec(`ALTER TABLE stashes ADD COLUMN deleted_at INTEGER DEFAULT NULL`);
+        console.log('🗂️ Added published and deleted_at columns to stashes.');
+      },
+    },
   ];
 
   // Run pending migrations in a transaction
@@ -420,5 +445,21 @@ const currentVersion = (
     console.log(`✅ Migrations complete. Schema version: ${pending[pending.length - 1].version}`);
   }
 }
+
+/**
+ * What a paid payment credited the seller, for queries that alias payments as
+ * `p` and stashes as `s`. Every balance and earnings total must sum this, not
+ * the stash price: a pay-what-you-want buyer can pay more than the price.
+ * Payments from before migration 13 have no amount_sats, and were always
+ * exactly the price.
+ */
+export const PAYMENT_AMOUNT_SQL = 'COALESCE(p.amount_sats, s.price_sats)';
+
+/**
+ * Whether a stash can be bought, for queries on the stashes table. An
+ * unpublished stash takes no new payments, but anything already paid for keeps
+ * working. A deleted one has no key left to hand out at all.
+ */
+export const STASH_FOR_SALE_SQL = 'published = 1 AND deleted_at IS NULL';
 
 export default db;

@@ -221,6 +221,7 @@ export function StorefrontPage() {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="text-orange-400 font-bold">
+                        {stash.payWhatYouWant ? 'from ' : ''}
                         {stash.priceSats.toLocaleString()} sats
                       </span>
                       <span className="text-slate-500 text-xs">

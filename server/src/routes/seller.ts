@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import db from '../db/index.js';
+import db, { STASH_FOR_SALE_SQL } from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
 import { sealedStashFields } from '../lib/sealedBlob.js';
 import type {
@@ -35,7 +35,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
     if (!settings) {
       // No settings row → check if they have stashes (used Stashu but never saved settings)
       const hasStashes = db
-        .prepare('SELECT 1 FROM stashes WHERE seller_pubkey = ? LIMIT 1')
+        .prepare('SELECT 1 FROM stashes WHERE seller_pubkey = ? AND deleted_at IS NULL LIMIT 1')
         .get(pubkey);
 
       if (!hasStashes) {
@@ -57,11 +57,11 @@ sellerRoutes.get('/:pubkey', async (c) => {
     }
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
-             blob_format, preview_url, generated_preview_payload, preview_proof,
-             download_window_seconds, created_at
+      SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want,
+             blob_url, blob_sha256, blob_format, preview_url, generated_preview_payload,
+             preview_proof, download_window_seconds, created_at
       FROM stashes
-      WHERE seller_pubkey = ? AND show_in_storefront = 1
+      WHERE seller_pubkey = ? AND show_in_storefront = 1 AND ${STASH_FOR_SALE_SQL}
       ORDER BY created_at DESC
     `);
 
@@ -73,6 +73,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'file_name'
       | 'file_size'
       | 'price_sats'
+      | 'pay_what_you_want'
       | 'blob_url'
       | 'blob_sha256'
       | 'blob_format'
@@ -90,6 +91,8 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileName: decrypt(row.file_name),
       fileSize: row.file_size,
       priceSats: row.price_sats,
+      payWhatYouWant: row.pay_what_you_want === 1,
+      published: true,
       ...sealedStashFields(row),
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),

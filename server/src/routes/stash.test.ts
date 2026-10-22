@@ -204,6 +204,38 @@ describe('POST /api/stash', () => {
     });
   });
 
+  describe('payWhatYouWant', () => {
+    async function created(body: Record<string, unknown>) {
+      const res = await createStash(body);
+      assert.equal(res.status, 201);
+      return (await res.json()).data.id as string;
+    }
+
+    it('stores the flag and reports it to buyers and in the manifest', async () => {
+      const id = await created({ ...validBody(), payWhatYouWant: true });
+
+      const info = (await (await app.request(`/api/stash/${id}`)).json()).data;
+      assert.equal(info.payWhatYouWant, true);
+      assert.equal(info.priceSats, 100, 'priceSats is now the minimum');
+
+      const manifest = (await (await app.request(`/api/stash/${id}/manifest`)).json()).data;
+      assert.equal(manifest.payWhatYouWant, true);
+    });
+
+    it('defaults to a fixed price', async () => {
+      const id = await created(validBody());
+      const info = (await (await app.request(`/api/stash/${id}`)).json()).data;
+      assert.equal(info.payWhatYouWant, false);
+    });
+
+    it('rejects anything but a boolean', async () => {
+      for (const payWhatYouWant of ['true', 1, {}]) {
+        const res = await createStash({ ...validBody(), payWhatYouWant });
+        assert.equal(res.status, 400, `accepted ${JSON.stringify(payWhatYouWant)}`);
+      }
+    });
+  });
+
   it('rejects invalid blobUrl', async () => {
     const res = await createStash({ ...validBody(), blobUrl: 'not-a-url' });
     assert.equal(res.status, 400);
@@ -1049,6 +1081,10 @@ describe('GET /api/stash/:id/manifest', () => {
       'description',
       'file',
       'priceSats',
+      // Public by design: buyers and tools need to know the price is a floor.
+      'payWhatYouWant',
+      // Public by design: tools need to know the seller has stopped selling.
+      'published',
       'payment',
       'blob',
       'preview',

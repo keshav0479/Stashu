@@ -60,6 +60,7 @@ interface MintFailedRow {
   id: string;
   stash_id: string;
   token_hash: string; // stores the quoteId for mint_failed payments
+  amount_sats: number | null; // the invoice's amount; NULL before migration 13
 }
 
 /**
@@ -69,7 +70,9 @@ interface MintFailedRow {
  */
 export async function recoverMintFailures(): Promise<void> {
   const failed = db
-    .prepare(`SELECT id, stash_id, token_hash FROM payments WHERE status = 'mint_failed'`)
+    .prepare(
+      `SELECT id, stash_id, token_hash, amount_sats FROM payments WHERE status = 'mint_failed'`
+    )
     .all() as MintFailedRow[];
 
   if (failed.length === 0) return;
@@ -90,15 +93,19 @@ export async function recoverMintFailures(): Promise<void> {
       }
 
       const quoteId = row.token_hash;
+      // What the invoice was for, not the stash price: a pay-what-you-want
+      // buyer may have paid more, and minting less would strand the rest on
+      // the quote (NUT-04 only issues what is asked for).
+      const amountSats = row.amount_sats ?? stash.price_sats;
       console.log(
         `  Retrying mint for payment ${row.id.substring(0, 8)}... (quote: ${quoteId.substring(0, 8)}...)`
       );
 
       // Retry minting tokens from the paid invoice
-      const mintedToken = await mintAfterPayment(stash.price_sats, quoteId);
+      const mintedToken = await mintAfterPayment(amountSats, quoteId);
 
       // Swap minted tokens to create seller's token
-      const swapResult = await verifyAndSwapToken(mintedToken, stash.price_sats);
+      const swapResult = await verifyAndSwapToken(mintedToken, amountSats);
 
       if (!swapResult.success || !swapResult.sellerToken) {
         console.error(
@@ -109,10 +116,10 @@ export async function recoverMintFailures(): Promise<void> {
 
       // Success! Update payment to 'paid' with encrypted seller token
       db.prepare(
-        `UPDATE payments SET status = 'paid', seller_token = ?, paid_at = unixepoch() WHERE id = ?`
-      ).run(encrypt(swapResult.sellerToken), row.id);
+        `UPDATE payments SET status = 'paid', seller_token = ?, amount_sats = ?, paid_at = unixepoch() WHERE id = ?`
+      ).run(encrypt(swapResult.sellerToken), amountSats, row.id);
 
-      console.log(`  ✅ Recovered payment ${row.id.substring(0, 8)}... — ${stash.price_sats} sats`);
+      console.log(`  ✅ Recovered payment ${row.id.substring(0, 8)}... — ${amountSats} sats`);
 
       // Trigger auto-settlement check
       tryAutoSettle(stash.seller_pubkey).catch((err) =>

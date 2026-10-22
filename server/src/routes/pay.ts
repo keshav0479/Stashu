@@ -1,14 +1,17 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { randomBytes } from 'crypto';
-import db from '../db/index.js';
+import db, { STASH_FOR_SALE_SQL } from '../db/index.js';
 import {
   createPaymentInvoice,
   checkPaymentStatus,
+  getMaxMintAmount,
   mintAfterPayment,
   verifyAndSwapToken,
 } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
+import { resolvePaymentAmount } from '../lib/pricing.js';
 import type {
+  PayInvoiceRequest,
   PayInvoiceResponse,
   PayStatusResponse,
   StashProofSecret,
@@ -41,6 +44,26 @@ function decryptPreviewSecret(value: string | null): StashProofSecret | undefine
   return value ? (JSON.parse(decrypt(value)) as StashProofSecret) : undefined;
 }
 
+const STASH_DELETED_ERROR = 'This stash was deleted by its seller';
+const STASH_UNPUBLISHED_ERROR = 'This stash is not for sale right now';
+
+/**
+ * The request's JSON object, {} when there is no body at all (clients from
+ * before pay-what-you-want send none), or null when the body isn't an object.
+ */
+async function readOptionalJson<T>(c: Context): Promise<Partial<T> | null> {
+  const text = await c.req.text();
+  if (!text.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Partial<T>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export const payRoutes = new Hono();
 
 // POST /api/pay/:id/invoice — Create a Lightning invoice for a stash
@@ -48,29 +71,64 @@ payRoutes.post('/:id/invoice', async (c) => {
   try {
     const stashId = c.req.param('id');
 
+    const body = await readOptionalJson<PayInvoiceRequest>(c);
+    if (!body) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid JSON body' }, 400);
+    }
+
     // Get stash
-    const stash = db.prepare('SELECT id, price_sats FROM stashes WHERE id = ?').get(stashId) as
-      | { id: string; price_sats: number }
+    const stash = db
+      .prepare(
+        'SELECT id, price_sats, pay_what_you_want, published, deleted_at FROM stashes WHERE id = ?'
+      )
+      .get(stashId) as
+      | Pick<StashRow, 'id' | 'price_sats' | 'pay_what_you_want' | 'published' | 'deleted_at'>
       | undefined;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
     }
+    if (stash.deleted_at !== null) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+    }
+    if (stash.published !== 1) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_UNPUBLISHED_ERROR }, 409);
+    }
+
+    const maxSats = stash.pay_what_you_want === 1 ? await getMaxMintAmount() : null;
+    const amount = resolvePaymentAmount(stash, body.amountSats, maxSats);
+    if (!amount.ok) {
+      return c.json<APIResponse<never>>({ success: false, error: amount.error }, 400);
+    }
 
     // Create a Lightning invoice via the Cashu mint
-    const { invoice, quoteId, expiresAt } = await createPaymentInvoice(stash.price_sats);
+    const { invoice, quoteId, expiresAt } = await createPaymentInvoice(amount.amountSats);
 
-    // Bind quoteId → stashId immediately (prevents cross-stash replay)
-    db.prepare(
-      `INSERT INTO payments (id, stash_id, status, token_hash) VALUES (?, ?, 'pending', ?)`
-    ).run(`ln-${quoteId}`, stashId, quoteId);
+    // Bind quoteId → stashId immediately (prevents cross-stash replay), and
+    // record the amount: minting must claim exactly what this invoice paid, and
+    // NUT-04 leaves anything under-claimed stranded on the quote.
+    //
+    // The seller may have unpublished or deleted the stash while the mint was
+    // answering, so the insert re-checks in the same statement. If it no longer
+    // applies, the invoice is never shown, so nobody can pay it.
+    const bound = db
+      .prepare(
+        `INSERT INTO payments (id, stash_id, status, token_hash, amount_sats)
+         SELECT ?, ?, 'pending', ?, ?
+         WHERE EXISTS (SELECT 1 FROM stashes WHERE id = ? AND ${STASH_FOR_SALE_SQL})`
+      )
+      .run(`ln-${quoteId}`, stashId, quoteId, amount.amountSats, stashId);
+
+    if (bound.changes === 0) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_UNPUBLISHED_ERROR }, 409);
+    }
 
     return c.json<APIResponse<PayInvoiceResponse>>({
       success: true,
       data: {
         invoice,
         quoteId,
-        amountSats: stash.price_sats,
+        amountSats: amount.amountSats,
         expiresAt,
       },
     });
@@ -113,7 +171,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     if (existingPayment.status === 'paid') {
       const stash = db
         .prepare(
-          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
+          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
         )
         .get(stashId) as Pick<
         StashRow,
@@ -123,7 +181,12 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         | 'preview_secret'
         | 'file_name'
         | 'download_window_seconds'
+        | 'deleted_at'
       >;
+
+      if (stash.deleted_at !== null) {
+        return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+      }
 
       const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
       const { claimToken, claimExpiresAt } = ensureClaimToken(
@@ -172,7 +235,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       if (current?.status === 'paid') {
         const stash = db
           .prepare(
-            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
+            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
           )
           .get(stashId) as Pick<
           StashRow,
@@ -182,7 +245,12 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           | 'preview_secret'
           | 'file_name'
           | 'download_window_seconds'
+          | 'deleted_at'
         >;
+
+        if (stash.deleted_at !== null) {
+          return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+        }
 
         const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
         const paidRow = db
@@ -228,7 +296,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     const stash = db
       .prepare(
-        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey, download_window_seconds FROM stashes WHERE id = ?'
+        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
       )
       .get(stashId) as Pick<
       StashRow,
@@ -241,6 +309,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       | 'file_name'
       | 'seller_pubkey'
       | 'download_window_seconds'
+      | 'deleted_at'
     > | null;
 
     if (!stash) {
@@ -248,13 +317,17 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     }
 
     const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
+    // The invoice's own amount, never the stash price: a pay-what-you-want
+    // invoice can be for more. Rows from before migration 13 have no amount
+    // and were made for exactly the price.
+    const amountSats = existingPayment.amount_sats ?? stash.price_sats;
 
     try {
       // Mint tokens from the paid invoice
-      const mintedToken = await mintAfterPayment(stash.price_sats, quoteId);
+      const mintedToken = await mintAfterPayment(amountSats, quoteId);
 
       // Swap minted tokens to create seller's token
-      const swapResult = await verifyAndSwapToken(mintedToken, stash.price_sats);
+      const swapResult = await verifyAndSwapToken(mintedToken, amountSats);
 
       if (!swapResult.success) {
         db.prepare(`UPDATE payments SET status = 'failed' WHERE id = ?`).run(paymentId);
@@ -277,13 +350,21 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       const claimExpiresAt = Math.floor(Date.now() / 1000) + windowSeconds;
 
       db.prepare(
-        `UPDATE payments SET status = 'paid', seller_token = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
-      ).run(encrypt(swapResult.sellerToken), claimToken, claimExpiresAt, paymentId);
+        `UPDATE payments SET status = 'paid', seller_token = ?, amount_sats = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
+      ).run(encrypt(swapResult.sellerToken), amountSats, claimToken, claimExpiresAt, paymentId);
 
       // Trigger auto-settlement check (fire-and-forget)
       tryAutoSettle(stash.seller_pubkey).catch((err) =>
         console.error('Auto-settle failed:', err instanceof Error ? err.message : err)
       );
+
+      // Deleting waits out every invoice younger than an hour, so this only
+      // happens if the mint honours one for longer. The payment is already
+      // real, so it is still minted and credited above rather than stranded
+      // on the quote; there is just no key left to hand over.
+      if (stash.deleted_at !== null) {
+        return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+      }
 
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,

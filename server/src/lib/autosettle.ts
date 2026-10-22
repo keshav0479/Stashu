@@ -1,4 +1,5 @@
 import db, {
+  PAYMENT_AMOUNT_SQL,
   insertChangeProof,
   getUnconsumedChangeProofs,
   markChangeProofsConsumed,
@@ -53,7 +54,7 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
     // 2. Check current unclaimed balance
     const result = db
       .prepare(
-        `SELECT SUM(s.price_sats) as total
+        `SELECT SUM(${PAYMENT_AMOUNT_SQL}) as total
          FROM payments p
          JOIN stashes s ON p.stash_id = s.id
          WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.claimed = 0 AND p.seller_token IS NOT NULL`

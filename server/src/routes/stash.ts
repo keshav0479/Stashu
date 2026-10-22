@@ -8,11 +8,14 @@ import type { AuthVariables } from '../middleware/auth.js';
 import type {
   CreateStashRequest,
   CreateStashResponse,
+  DeleteStashResponse,
   GeneratedPreviewPayload,
   StashManifest,
   StashProof,
   StashProofSecret,
   StashPublicInfo,
+  UpdateStashRequest,
+  UpdateStashResponse,
   APIResponse,
 } from '../../../shared/types.js';
 import {
@@ -478,6 +481,13 @@ stashRoutes.post('/', async (c) => {
       );
     }
 
+    if (body.payWhatYouWant !== undefined && typeof body.payWhatYouWant !== 'boolean') {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'payWhatYouWant must be a boolean' },
+        400
+      );
+    }
+
     const previewError = validatePreviewBundle(body);
     if (previewError) {
       return c.json<APIResponse<never>>({ success: false, error: previewError }, 400);
@@ -489,9 +499,10 @@ stashRoutes.post('/', async (c) => {
       INSERT INTO stashes (
         id, blob_url, blob_sha256, secret_key, seller_pubkey, price_sats,
         title, description, file_name, file_size, blob_format, preview_url,
-        generated_preview_payload, preview_proof, preview_secret, download_window_seconds
+        generated_preview_payload, preview_proof, preview_secret, download_window_seconds,
+        pay_what_you_want
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -510,7 +521,8 @@ stashRoutes.post('/', async (c) => {
       body.generatedPreview ? stringifyEncryptedJson(body.generatedPreview) : null,
       body.previewProof ? stringifyEncryptedJson(body.previewProof) : null,
       body.previewSecret ? stringifyEncryptedJson(body.previewSecret) : null,
-      body.downloadWindowSeconds ?? null
+      body.downloadWindowSeconds ?? null,
+      body.payWhatYouWant ? 1 : 0
     );
 
     const shareUrl = `/s/${id}`;
@@ -556,10 +568,10 @@ stashRoutes.post('/:id/visibility', async (c) => {
 
     // Verify the stash belongs to this seller
     const stash = db
-      .prepare('SELECT seller_pubkey, show_in_storefront FROM stashes WHERE id = ?')
-      .get(id) as { seller_pubkey: string; show_in_storefront: number } | null;
+      .prepare('SELECT seller_pubkey, deleted_at FROM stashes WHERE id = ?')
+      .get(id) as Pick<StashRow, 'seller_pubkey' | 'deleted_at'> | null;
 
-    if (!stash) {
+    if (!stash || stash.deleted_at !== null) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
     }
 
@@ -596,6 +608,215 @@ stashRoutes.post('/:id/visibility', async (c) => {
   }
 });
 
+const EDITABLE_FIELDS = ['title', 'description', 'priceSats', 'payWhatYouWant', 'published'];
+
+function validateStashUpdate(body: Record<string, unknown>): string | null {
+  if (!hasOnlyKeys(body, EDITABLE_FIELDS)) {
+    return 'Only title, description, priceSats, payWhatYouWant and published can be changed';
+  }
+  if (Object.keys(body).length === 0) {
+    return 'Nothing to change';
+  }
+  if (body.title !== undefined) {
+    if (typeof body.title !== 'string' || !body.title.trim()) {
+      return 'title must not be empty';
+    }
+    if (body.title.length > 200) return 'title exceeds 200 characters';
+  }
+  if (body.description !== undefined) {
+    if (typeof body.description !== 'string') return 'description must be a string';
+    if (body.description.length > 2000) return 'description exceeds 2000 characters';
+  }
+  if (
+    body.priceSats !== undefined &&
+    !(Number.isSafeInteger(body.priceSats) && (body.priceSats as number) >= 1)
+  ) {
+    return 'priceSats must be a positive integer';
+  }
+  if (body.payWhatYouWant !== undefined && typeof body.payWhatYouWant !== 'boolean') {
+    return 'payWhatYouWant must be a boolean';
+  }
+  if (body.published !== undefined && typeof body.published !== 'boolean') {
+    return 'published must be a boolean';
+  }
+  return null;
+}
+
+// PATCH /api/stash/:id - Edit a stash, or stop and restart its sales (requires NIP-98 auth)
+stashRoutes.patch('/:id', async (c) => {
+  try {
+    const pubkey = c.get('authedPubkey');
+    const id = c.req.param('id');
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid JSON body' }, 400);
+    }
+    if (!isRecord(body)) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid JSON body' }, 400);
+    }
+
+    const validationError = validateStashUpdate(body);
+    if (validationError) {
+      return c.json<APIResponse<never>>({ success: false, error: validationError }, 400);
+    }
+    const changes = body as UpdateStashRequest;
+
+    const stash = db
+      .prepare('SELECT seller_pubkey, price_sats, deleted_at FROM stashes WHERE id = ?')
+      .get(id) as Pick<StashRow, 'seller_pubkey' | 'price_sats' | 'deleted_at'> | undefined;
+
+    if (!stash || stash.deleted_at !== null) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
+    }
+    if (stash.seller_pubkey !== pubkey) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Not your stash' }, 403);
+    }
+
+    // Column names come from this fixed list only, never from the request.
+    const assignments: Array<[column: string, value: string | number | null]> = [];
+    if (changes.title !== undefined) assignments.push(['title', encrypt(changes.title)]);
+    if (changes.description !== undefined) {
+      assignments.push(['description', changes.description ? encrypt(changes.description) : null]);
+    }
+    if (changes.priceSats !== undefined) assignments.push(['price_sats', changes.priceSats]);
+    if (changes.payWhatYouWant !== undefined) {
+      assignments.push(['pay_what_you_want', changes.payWhatYouWant ? 1 : 0]);
+    }
+    if (changes.published !== undefined) {
+      assignments.push(['published', changes.published ? 1 : 0]);
+    }
+
+    db.transaction(() => {
+      if (changes.priceSats !== undefined && changes.priceSats !== stash.price_sats) {
+        // Payments from before migration 13 carry no amount and are valued at
+        // the stash price (PAYMENT_AMOUNT_SQL). Pin them to the price they
+        // were paid at first, or a new price would revalue every one of them
+        // in the dashboard, withdrawals and auto-settlement.
+        db.prepare(
+          'UPDATE payments SET amount_sats = ? WHERE stash_id = ? AND amount_sats IS NULL'
+        ).run(stash.price_sats, id);
+      }
+      db.prepare(
+        `UPDATE stashes SET ${assignments.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`
+      ).run(...assignments.map(([, value]) => value), id);
+    })();
+
+    const updated = db
+      .prepare(
+        'SELECT title, description, price_sats, pay_what_you_want, published FROM stashes WHERE id = ?'
+      )
+      .get(id) as Pick<
+      StashRow,
+      'title' | 'description' | 'price_sats' | 'pay_what_you_want' | 'published'
+    >;
+
+    return c.json<APIResponse<UpdateStashResponse>>({
+      success: true,
+      data: {
+        title: decrypt(updated.title),
+        description: updated.description ? decrypt(updated.description) : undefined,
+        priceSats: updated.price_sats,
+        payWhatYouWant: updated.pay_what_you_want === 1,
+        published: updated.published === 1,
+      },
+    });
+  } catch (error) {
+    console.error('Error updating stash:', error);
+    return c.json<APIResponse<never>>({ success: false, error: 'Failed to update stash' }, 500);
+  }
+});
+
+// A Lightning invoice stays payable until it expires, and the mint can't
+// cancel it. Pending rows older than this count as expired, the same hour
+// cleanupStaleQuotes() deletes them after.
+const PAYMENT_IN_FLIGHT_SECONDS = 3600;
+
+type DeleteOutcome =
+  | { ok: true; blobUrl: string; blobSha256: string | null }
+  | { ok: false; status: 403 | 404 | 409; error: string };
+
+// One transaction, so no payment can start between the in-flight check and
+// the wipe.
+const deleteStashRow = db.transaction((id: string, pubkey: string): DeleteOutcome => {
+  const stash = db
+    .prepare('SELECT seller_pubkey, blob_url, blob_sha256, deleted_at FROM stashes WHERE id = ?')
+    .get(id) as
+    | Pick<StashRow, 'seller_pubkey' | 'blob_url' | 'blob_sha256' | 'deleted_at'>
+    | undefined;
+
+  if (!stash || stash.deleted_at !== null) {
+    return { ok: false, status: 404, error: 'Stash not found' };
+  }
+  if (stash.seller_pubkey !== pubkey) {
+    return { ok: false, status: 403, error: 'Not your stash' };
+  }
+
+  // Someone who opened an invoice can still pay it, and must then get the
+  // file they paid for, so the key has to outlive every open invoice.
+  const now = Math.floor(Date.now() / 1000);
+  const { latest } = db
+    .prepare(
+      `SELECT MAX(created_at) AS latest FROM payments
+       WHERE stash_id = ? AND status IN ('pending', 'processing') AND created_at > ?`
+    )
+    .get(id, now - PAYMENT_IN_FLIGHT_SECONDS) as { latest: number | null };
+
+  if (latest !== null) {
+    const minutes = Math.max(1, Math.ceil((latest + PAYMENT_IN_FLIGHT_SECONDS - now) / 60));
+    return {
+      ok: false,
+      status: 409,
+      error: `Someone may still be paying for this stash. You can delete it in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+    };
+  }
+
+  // NOT NULL columns get an empty string; every reader skips deleted rows
+  // before decrypting anything.
+  db.prepare(
+    `UPDATE stashes SET
+       deleted_at = unixepoch(), published = 0, show_in_storefront = 0,
+       title = '', description = NULL, file_name = '', secret_key = '', key_backup = NULL,
+       blob_url = '', blob_sha256 = NULL, preview_url = NULL, generated_preview_payload = NULL,
+       preview_proof = NULL, preview_secret = NULL
+     WHERE id = ?`
+  ).run(id);
+
+  return { ok: true, blobUrl: decrypt(stash.blob_url), blobSha256: stash.blob_sha256 };
+});
+
+// DELETE /api/stash/:id - Delete a stash for good (requires NIP-98 auth)
+//
+// Threat model: the file key, blob location and metadata are wiped, so a later
+// database leak, SQL injection read or server compromise can't unlock or
+// describe a deleted stash. It can't recall copies buyers already downloaded or
+// database backups taken before the delete. The encrypted blob on Blossom is
+// the seller's to delete, signed with their own key: the response says where it
+// is, and their browser asks each server (BUD-12). A server that refuses keeps
+// only ciphertext that nobody holds the key to anymore.
+//
+// The row itself stays, because payments point at it: unclaimed earnings,
+// withdrawals and crash recovery all find the seller through it.
+stashRoutes.delete('/:id', async (c) => {
+  try {
+    const outcome = deleteStashRow(c.req.param('id'), c.get('authedPubkey'));
+
+    if (!outcome.ok) {
+      return c.json<APIResponse<never>>({ success: false, error: outcome.error }, outcome.status);
+    }
+
+    return c.json<APIResponse<DeleteStashResponse>>({
+      success: true,
+      data: { blobUrl: outcome.blobUrl, blobSha256: outcome.blobSha256 ?? undefined },
+    });
+  } catch (error) {
+    console.error('Error deleting stash:', error);
+    return c.json<APIResponse<never>>({ success: false, error: 'Failed to delete stash' }, 500);
+  }
+});
+
 type PublicStashRow = Pick<
   StashRow,
   | 'id'
@@ -604,6 +825,9 @@ type PublicStashRow = Pick<
   | 'file_name'
   | 'file_size'
   | 'price_sats'
+  | 'pay_what_you_want'
+  | 'published'
+  | 'deleted_at'
   | 'blob_url'
   | 'blob_sha256'
   | 'blob_format'
@@ -613,14 +837,16 @@ type PublicStashRow = Pick<
   | 'download_window_seconds'
 >;
 
+const STASH_DELETED_ERROR = 'This stash was deleted by its seller';
+
 // Only ever selects public columns — secret_key and preview_secret must
 // never be read here.
 function getPublicStashRow(id: string): PublicStashRow | null {
   return db
     .prepare(
-      `SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
-              blob_format, preview_url, generated_preview_payload, preview_proof,
-              download_window_seconds
+      `SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want,
+              published, deleted_at, blob_url, blob_sha256, blob_format, preview_url,
+              generated_preview_payload, preview_proof, download_window_seconds
        FROM stashes WHERE id = ?`
     )
     .get(id) as PublicStashRow | null;
@@ -634,6 +860,9 @@ stashRoutes.get('/:id/manifest', async (c) => {
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
+    }
+    if (stash.deleted_at !== null) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
     }
 
     const sealed = sealedStashFields(stash);
@@ -657,6 +886,8 @@ stashRoutes.get('/:id/manifest', async (c) => {
         size: stash.file_size,
       },
       priceSats: stash.price_sats,
+      payWhatYouWant: stash.pay_what_you_want === 1,
+      published: stash.published === 1,
       payment: {
         methods: ['lightning', 'cashu'],
         endpoints: {
@@ -701,8 +932,13 @@ stashRoutes.get('/:id', async (c) => {
         404
       );
     }
+    if (stash.deleted_at !== null) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+    }
 
-    // Convert snake_case to camelCase and decrypt metadata
+    // Convert snake_case to camelCase and decrypt metadata. An unpublished
+    // stash is still returned whole: a returning buyer needs it to verify a
+    // re-download, and the page shows it as not for sale.
     const response: StashPublicInfo = {
       id: stash.id,
       title: decrypt(stash.title),
@@ -710,6 +946,8 @@ stashRoutes.get('/:id', async (c) => {
       fileName: decrypt(stash.file_name),
       fileSize: stash.file_size,
       priceSats: stash.price_sats,
+      payWhatYouWant: stash.pay_what_you_want === 1,
+      published: stash.published === 1,
       ...sealedStashFields(stash),
       previewUrl: stash.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload),

@@ -30,6 +30,8 @@ export interface StashShareInfo {
   priceSats: number;
   /** Public image URL for the card, when the stash has one. */
   previewUrl?: string;
+  /** priceSats is a minimum: the card says "from". */
+  payWhatYouWant?: boolean;
 }
 
 // Descriptions run to 2000 chars, far past what any crawler renders.
@@ -112,7 +114,8 @@ export function fileKind(fileName: string): string | null {
  */
 export function buildCardDescription(stash: StashShareInfo): string {
   const kind = fileKind(stash.fileName);
-  const facts = [formatSats(stash.priceSats), formatBytes(stash.fileSize), kind]
+  const price = formatSats(stash.priceSats);
+  const facts = [stash.payWhatYouWant ? `From ${price}` : price, formatBytes(stash.fileSize), kind]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
 

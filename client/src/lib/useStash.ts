@@ -26,6 +26,8 @@ export interface StashOptions {
   title: string;
   description?: string;
   priceSats: number;
+  // Makes priceSats the minimum; buyers choose any amount at or above it.
+  payWhatYouWant?: boolean;
   downloadWindowSeconds: number;
   peekMode?: 'none' | 'auto' | 'excerpt';
   previewLineLimit?: TextLineLimit;
@@ -109,6 +111,7 @@ export function useStash() {
         blobFormat: STASH_BLOB_FORMAT,
         sellerPubkey: pubkey,
         priceSats: options.priceSats,
+        payWhatYouWant: options.payWhatYouWant,
         title: options.title,
         description: options.description,
         downloadWindowSeconds: options.downloadWindowSeconds,

@@ -2,12 +2,16 @@ import type {
   APIResponse,
   CreateStashRequest,
   CreateStashResponse,
+  DeleteStashResponse,
+  UpdateStashRequest,
+  UpdateStashResponse,
   StashPublicInfo,
   UnlockRequest,
   UnlockResponse,
   DashboardResponse,
   WithdrawQuoteResponse,
   WithdrawResponse,
+  PayInvoiceRequest,
   PayInvoiceResponse,
   PayStatusResponse,
   LnAddressResolveResponse,
@@ -43,6 +47,56 @@ export async function createStash(request: CreateStashRequest): Promise<CreateSt
 }
 
 /**
+ * Edit one of the seller's stashes, or stop and restart its sales. Send only
+ * what changes.
+ */
+export async function updateStash(
+  stashId: string,
+  changes: UpdateStashRequest
+): Promise<UpdateStashResponse> {
+  const url = `${API_BASE}/stash/${stashId}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: createAuthHeader(url, 'PATCH'),
+    },
+    body: JSON.stringify(changes),
+  });
+
+  const result: APIResponse<UpdateStashResponse> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
+
+/**
+ * Delete one of the seller's stashes for good. Resolves with where its file
+ * is stored, so the caller can delete it from Blossom too. A 409 means a
+ * payment may still be in flight; the error carries the status.
+ */
+export async function deleteStash(stashId: string): Promise<DeleteStashResponse> {
+  const url = `${API_BASE}/stash/${stashId}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: createAuthHeader(url, 'DELETE') },
+  });
+
+  const result: APIResponse<DeleteStashResponse> = await response.json();
+
+  if (!result.success) {
+    const err = new Error(result.error) as Error & { status: number };
+    err.status = response.status;
+    throw err;
+  }
+
+  return result.data;
+}
+
+/**
  * Get public info about a stash
  */
 export async function getStashInfo(id: string): Promise<StashPublicInfo> {
@@ -59,11 +113,19 @@ export async function getStashInfo(id: string): Promise<StashPublicInfo> {
 /**
  * Unlock a stash with a Cashu token
  */
-export async function unlockStash(id: string, token: string): Promise<UnlockResponse> {
+/**
+ * @param amountSats pay-what-you-want only: the amount the buyer chose, which
+ * the token must credit exactly. Omit for a fixed price.
+ */
+export async function unlockStash(
+  id: string,
+  token: string,
+  amountSats?: number
+): Promise<UnlockResponse> {
   const response = await fetch(`${API_BASE}/unlock/${id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token } as UnlockRequest),
+    body: JSON.stringify({ token, amountSats } satisfies UnlockRequest),
   });
 
   const result: APIResponse<UnlockResponse> = await response.json();
@@ -161,11 +223,24 @@ export async function executeWithdraw(
 /**
  * Create a Lightning invoice for paying for a stash
  */
-export async function createPayInvoice(stashId: string): Promise<PayInvoiceResponse> {
+/**
+ * @param amountSats pay-what-you-want only: the amount the buyer chose. Omit
+ * for a fixed price, and no body is sent at all.
+ */
+export async function createPayInvoice(
+  stashId: string,
+  amountSats?: number
+): Promise<PayInvoiceResponse> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/pay/${stashId}/invoice`, {
       method: 'POST',
+      ...(amountSats !== undefined
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amountSats } satisfies PayInvoiceRequest),
+          }
+        : {}),
       signal: AbortSignal.timeout(INVOICE_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
