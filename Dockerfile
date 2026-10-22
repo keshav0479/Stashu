@@ -55,6 +55,11 @@ RUN apk del python3 make g++
 COPY --from=builder /app/client/dist client/dist
 COPY --from=builder /app/server/dist server/dist
 
+# Vendored Outfit faces for share-card rendering. This base image ships no
+# fonts at all, so without these resvg has nothing to draw text with and
+# cards fall back to the site icon.
+COPY server/assets server/assets
+
 # Create data directory for SQLite
 RUN mkdir -p /data && chown node:node /data
 

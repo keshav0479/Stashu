@@ -28,6 +28,7 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 const BASE64URL_RE = /^[A-Za-z0-9_-]*$/;
 const SEALED_SECRET_KEY_RE = /^stashu-selective-v1:[A-Za-z0-9+/]{43}=$/;
 const MAX_PREVIEW_PAYLOAD_JSON_LENGTH = 64 * 1024;
+const MAX_PREVIEW_URL_LENGTH = 2000;
 const MAX_PREVIEW_BASE64URL_LENGTH = 64 * 1024;
 const MAX_PREVIEW_CONTENT_BYTES = 16 * 1024;
 const MAX_PREVIEW_CHARS = 4_000;
@@ -431,6 +432,32 @@ stashRoutes.post('/', async (c) => {
         { success: false, error: 'Invalid sealed stash secretKey' },
         400
       );
+    }
+
+    // previewUrl is echoed into share-card og:image tags and storefront <img>
+    // tags, so it has to be a public image URL and nothing more exotic —
+    // javascript:, data: and private-network hosts are all rejected.
+    if (body.previewUrl) {
+      if (body.previewUrl.length > MAX_PREVIEW_URL_LENGTH) {
+        return c.json<APIResponse<never>>(
+          { success: false, error: 'previewUrl exceeds 2000 characters' },
+          400
+        );
+      }
+
+      let previewUrl: URL;
+      try {
+        previewUrl = new URL(body.previewUrl);
+      } catch {
+        return c.json<APIResponse<never>>({ success: false, error: 'Invalid previewUrl' }, 400);
+      }
+
+      if (!isSafePublicBlobUrl(previewUrl)) {
+        return c.json<APIResponse<never>>(
+          { success: false, error: 'previewUrl must be a public HTTPS URL' },
+          400
+        );
+      }
     }
 
     if (

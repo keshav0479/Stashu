@@ -122,6 +122,80 @@ describe('POST /api/stash', () => {
     assert.equal(res.status, 400);
   });
 
+  // previewUrl is echoed into share-card og:image tags and storefront <img>
+  // tags, so anything but a public image URL has to be refused at the door.
+  describe('previewUrl', () => {
+    it('stores a public HTTPS preview URL', async () => {
+      const res = await createStash({
+        ...validBody(),
+        previewUrl: 'https://blossom.example.com/card.png',
+      });
+      assert.equal(res.status, 201);
+
+      const { id } = (await res.json()).data;
+      const row = db.prepare('SELECT preview_url FROM stashes WHERE id = ?').get(id) as {
+        preview_url: string | null;
+      };
+      assert.equal(row.preview_url, 'https://blossom.example.com/card.png');
+    });
+
+    it('stores null when previewUrl is omitted or blank', async () => {
+      for (const previewUrl of [undefined, '']) {
+        const res = await createStash({ ...validBody(), previewUrl });
+        assert.equal(res.status, 201);
+
+        const { id } = (await res.json()).data;
+        const row = db.prepare('SELECT preview_url FROM stashes WHERE id = ?').get(id) as {
+          preview_url: string | null;
+        };
+        assert.equal(row.preview_url, null);
+      }
+    });
+
+    it('rejects non-HTTPS and non-URL schemes', async () => {
+      for (const previewUrl of [
+        'javascript:alert(1)',
+        'data:image/png;base64,iVBORw0KGgo=',
+        'http://blossom.example.com/card.png',
+        'file:///etc/passwd',
+        'not a url at all',
+      ]) {
+        const res = await createStash({ ...validBody(), previewUrl });
+        assert.equal(res.status, 400, `accepted ${previewUrl}`);
+      }
+    });
+
+    it('rejects private and reserved hosts', async () => {
+      for (const previewUrl of [
+        'https://localhost/card.png',
+        'https://127.0.0.1/card.png',
+        'https://192.168.1.10/card.png',
+        'https://10.0.0.5/card.png',
+        'https://169.254.169.254/latest/meta-data',
+        'https://router.local/card.png',
+      ]) {
+        const res = await createStash({ ...validBody(), previewUrl });
+        assert.equal(res.status, 400, `accepted ${previewUrl}`);
+      }
+    });
+
+    it('rejects credentials embedded in the URL', async () => {
+      const res = await createStash({
+        ...validBody(),
+        previewUrl: 'https://user:pass@blossom.example.com/card.png',
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it('rejects an overlong previewUrl', async () => {
+      const res = await createStash({
+        ...validBody(),
+        previewUrl: `https://blossom.example.com/${'x'.repeat(2000)}.png`,
+      });
+      assert.equal(res.status, 400);
+    });
+  });
+
   it('rejects invalid blobUrl', async () => {
     const res = await createStash({ ...validBody(), blobUrl: 'not-a-url' });
     assert.equal(res.status, 400);
