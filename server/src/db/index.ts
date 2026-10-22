@@ -417,6 +417,18 @@ const currentVersion = (
         console.log('💸 Added pay-what-you-want pricing and per-payment amounts.');
       },
     },
+    {
+      version: 14,
+      name: 'add publish and delete state to stashes',
+      run: () => {
+        // 0 stops new sales; buyers who already paid can still re-download.
+        db.exec(`ALTER TABLE stashes ADD COLUMN published INTEGER DEFAULT 1`);
+        // Set when the seller deletes the stash. The row stays, wiped down to
+        // what its payments still need, so earnings and recovery keep working.
+        db.exec(`ALTER TABLE stashes ADD COLUMN deleted_at INTEGER DEFAULT NULL`);
+        console.log('🗂️ Added published and deleted_at columns to stashes.');
+      },
+    },
   ];
 
   // Run pending migrations in a transaction
@@ -442,5 +454,12 @@ const currentVersion = (
  * exactly the price.
  */
 export const PAYMENT_AMOUNT_SQL = 'COALESCE(p.amount_sats, s.price_sats)';
+
+/**
+ * Whether a stash can be bought, for queries on the stashes table. An
+ * unpublished stash takes no new payments, but anything already paid for keeps
+ * working. A deleted one has no key left to hand out at all.
+ */
+export const STASH_FOR_SALE_SQL = 'published = 1 AND deleted_at IS NULL';
 
 export default db;

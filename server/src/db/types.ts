@@ -28,6 +28,8 @@ export interface StashRow {
   show_in_storefront: number;
   download_window_seconds: number | null; // NULL = use DEFAULT_DOWNLOAD_WINDOW_SECONDS
   pay_what_you_want: number; // 1 = price_sats is a minimum, not the price
+  published: number; // 0 = not for sale; past buyers can still re-download
+  deleted_at: number | null; // set on delete, when secrets and metadata are wiped
   created_at: number;
 }
 

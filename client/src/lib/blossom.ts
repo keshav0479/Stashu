@@ -4,7 +4,11 @@
  * Supports BUD-04 mirroring for redundancy and fallback downloads
  */
 
-import { createBlossomAuthEvent, createBlossomMirrorAuthEvent } from './nostr';
+import {
+  createBlossomAuthEvent,
+  createBlossomDeleteAuthEvent,
+  createBlossomMirrorAuthEvent,
+} from './nostr';
 import { sha256 } from './crypto';
 
 const DEFAULT_BLOSSOM_SERVER = (
@@ -263,6 +267,86 @@ export function mirrorToBackupServers(
       if (ok) console.log(`Mirrored to ${server}`);
     });
   }
+}
+
+const DELETE_TIMEOUT_MS = 15_000;
+
+export type BlossomDeleteResult = 'deleted' | 'not-found' | 'failed';
+
+/**
+ * Delete a blob from one Blossom server (BUD-12). Signed with the seller's
+ * key, so it only works where that key uploaded or mirrored the blob.
+ * Never throws.
+ */
+export async function deleteFromBlossom(
+  blobSha256: string,
+  server: string
+): Promise<BlossomDeleteResult> {
+  try {
+    const url = `${server}/${blobSha256}`;
+    const authEvent = await createBlossomDeleteAuthEvent(url, blobSha256);
+
+    const response = await fetchWithAuthFallback(url, authEvent, {
+      method: 'DELETE',
+      headers: {},
+      signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
+    });
+
+    if (response.ok) return 'deleted';
+    // BUD-12 also answers 404 for a blob that exists but isn't this key's.
+    return response.status === 404 ? 'not-found' : 'failed';
+  } catch {
+    return 'failed';
+  }
+}
+
+// Blossom URLs end in the blob's hash, optionally with a file extension.
+function blobHashFromUrl(blobUrl: string): string | null {
+  try {
+    const name = new URL(blobUrl).pathname.split('/').pop() ?? '';
+    const hash = name.replace(/\.[a-z0-9]+$/i, '');
+    return /^[0-9a-f]{64}$/.test(hash) ? hash : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete a deleted stash's file from the server it was uploaded to, the
+ * mirrors, and the legacy servers older stashes were mirrored to. Best effort:
+ * it resolves with the hosts that didn't confirm, which by then hold only
+ * ciphertext — the Stashu server has already wiped the key.
+ *
+ * Legacy servers are asked but never reported: they may hold an old replica,
+ * but blossom.primal.net sends its 404s without CORS headers, so the browser
+ * can't tell "nothing here" from a failure and every delete would warn.
+ */
+export async function deleteStashFile(
+  blobUrl: string,
+  blobSha256: string | undefined
+): Promise<{ failedHosts: string[] }> {
+  let primary: string | null = null;
+  try {
+    primary = new URL(blobUrl).origin;
+  } catch {
+    // Not a URL; the mirrors are still worth trying.
+  }
+
+  const hash = blobSha256 ?? blobHashFromUrl(blobUrl);
+  if (!hash) {
+    return { failedHosts: primary ? [new URL(primary).host] : [] };
+  }
+
+  const servers = [
+    ...new Set([...(primary ? [primary] : []), ...MIRROR_SERVERS, ...LEGACY_DOWNLOAD_SERVERS]),
+  ];
+  const results = await Promise.all(servers.map((server) => deleteFromBlossom(hash, server)));
+  const unreported = new Set(LEGACY_DOWNLOAD_SERVERS.filter((server) => server !== primary));
+  return {
+    failedHosts: servers
+      .filter((server, i) => results[i] === 'failed' && !unreported.has(server))
+      .map((server) => new URL(server).host),
+  };
 }
 
 /**

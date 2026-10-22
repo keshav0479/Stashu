@@ -1083,6 +1083,8 @@ describe('GET /api/stash/:id/manifest', () => {
       'priceSats',
       // Public by design: buyers and tools need to know the price is a floor.
       'payWhatYouWant',
+      // Public by design: tools need to know the seller has stopped selling.
+      'published',
       'payment',
       'blob',
       'preview',

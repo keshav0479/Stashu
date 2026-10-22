@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { randomBytes } from 'crypto';
-import db from '../db/index.js';
+import db, { STASH_FOR_SALE_SQL } from '../db/index.js';
 import {
   createPaymentInvoice,
   checkPaymentStatus,
@@ -44,6 +44,9 @@ function decryptPreviewSecret(value: string | null): StashProofSecret | undefine
   return value ? (JSON.parse(decrypt(value)) as StashProofSecret) : undefined;
 }
 
+const STASH_DELETED_ERROR = 'This stash was deleted by its seller';
+const STASH_UNPUBLISHED_ERROR = 'This stash is not for sale right now';
+
 /**
  * The request's JSON object, {} when there is no body at all (clients from
  * before pay-what-you-want send none), or null when the body isn't an object.
@@ -75,11 +78,21 @@ payRoutes.post('/:id/invoice', async (c) => {
 
     // Get stash
     const stash = db
-      .prepare('SELECT id, price_sats, pay_what_you_want FROM stashes WHERE id = ?')
-      .get(stashId) as { id: string; price_sats: number; pay_what_you_want: number } | undefined;
+      .prepare(
+        'SELECT id, price_sats, pay_what_you_want, published, deleted_at FROM stashes WHERE id = ?'
+      )
+      .get(stashId) as
+      | Pick<StashRow, 'id' | 'price_sats' | 'pay_what_you_want' | 'published' | 'deleted_at'>
+      | undefined;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
+    }
+    if (stash.deleted_at !== null) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+    }
+    if (stash.published !== 1) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_UNPUBLISHED_ERROR }, 409);
     }
 
     const maxSats = stash.pay_what_you_want === 1 ? await getMaxMintAmount() : null;
@@ -94,10 +107,21 @@ payRoutes.post('/:id/invoice', async (c) => {
     // Bind quoteId → stashId immediately (prevents cross-stash replay), and
     // record the amount: minting must claim exactly what this invoice paid, and
     // NUT-04 leaves anything under-claimed stranded on the quote.
-    db.prepare(
-      `INSERT INTO payments (id, stash_id, status, token_hash, amount_sats)
-       VALUES (?, ?, 'pending', ?, ?)`
-    ).run(`ln-${quoteId}`, stashId, quoteId, amount.amountSats);
+    //
+    // The seller may have unpublished or deleted the stash while the mint was
+    // answering, so the insert re-checks in the same statement. If it no longer
+    // applies, the invoice is never shown, so nobody can pay it.
+    const bound = db
+      .prepare(
+        `INSERT INTO payments (id, stash_id, status, token_hash, amount_sats)
+         SELECT ?, ?, 'pending', ?, ?
+         WHERE EXISTS (SELECT 1 FROM stashes WHERE id = ? AND ${STASH_FOR_SALE_SQL})`
+      )
+      .run(`ln-${quoteId}`, stashId, quoteId, amount.amountSats, stashId);
+
+    if (bound.changes === 0) {
+      return c.json<APIResponse<never>>({ success: false, error: STASH_UNPUBLISHED_ERROR }, 409);
+    }
 
     return c.json<APIResponse<PayInvoiceResponse>>({
       success: true,
@@ -147,7 +171,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     if (existingPayment.status === 'paid') {
       const stash = db
         .prepare(
-          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
+          'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
         )
         .get(stashId) as Pick<
         StashRow,
@@ -157,7 +181,12 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
         | 'preview_secret'
         | 'file_name'
         | 'download_window_seconds'
+        | 'deleted_at'
       >;
+
+      if (stash.deleted_at !== null) {
+        return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+      }
 
       const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
       const { claimToken, claimExpiresAt } = ensureClaimToken(
@@ -206,7 +235,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       if (current?.status === 'paid') {
         const stash = db
           .prepare(
-            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds FROM stashes WHERE id = ?'
+            'SELECT secret_key, blob_url, blob_sha256, preview_secret, file_name, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
           )
           .get(stashId) as Pick<
           StashRow,
@@ -216,7 +245,12 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
           | 'preview_secret'
           | 'file_name'
           | 'download_window_seconds'
+          | 'deleted_at'
         >;
+
+        if (stash.deleted_at !== null) {
+          return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+        }
 
         const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
         const paidRow = db
@@ -262,7 +296,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
 
     const stash = db
       .prepare(
-        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey, download_window_seconds FROM stashes WHERE id = ?'
+        'SELECT id, price_sats, secret_key, blob_url, blob_sha256, preview_secret, file_name, seller_pubkey, download_window_seconds, deleted_at FROM stashes WHERE id = ?'
       )
       .get(stashId) as Pick<
       StashRow,
@@ -275,6 +309,7 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       | 'file_name'
       | 'seller_pubkey'
       | 'download_window_seconds'
+      | 'deleted_at'
     > | null;
 
     if (!stash) {
@@ -322,6 +357,14 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       tryAutoSettle(stash.seller_pubkey).catch((err) =>
         console.error('Auto-settle failed:', err instanceof Error ? err.message : err)
       );
+
+      // Deleting waits out every invoice younger than an hour, so this only
+      // happens if the mint honours one for longer. The payment is already
+      // real, so it is still minted and credited above rather than stranded
+      // on the quote; there is just no key left to hand over.
+      if (stash.deleted_at !== null) {
+        return c.json<APIResponse<never>>({ success: false, error: STASH_DELETED_ERROR }, 410);
+      }
 
       return c.json<APIResponse<PayStatusResponse>>({
         success: true,
