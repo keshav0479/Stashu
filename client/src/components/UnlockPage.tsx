@@ -91,6 +91,19 @@ export function UnlockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, unlock.loadStash]);
 
+  // The server writes this stash's title into <title> for link previews, and
+  // nothing else in the app sets document.title — so mirror it here, and put
+  // the default back on the way out, or the stash's name would follow the
+  // visitor onto every page they navigate to from here.
+  const stashTitle = unlock.stash?.title;
+  useEffect(() => {
+    if (stashTitle === undefined) return;
+    document.title = `${stashTitle.trim() || 'Untitled stash'} · Stashu`;
+    return () => {
+      document.title = 'Stashu';
+    };
+  }, [stashTitle]);
+
   // After stash loads, try to recover a previous payment via claim token
   const claimAttempted = useRef(false);
   useEffect(() => {
