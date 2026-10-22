@@ -286,3 +286,78 @@ describe('v2 keyset handling (mint rotation)', () => {
     assert.equal(isStaleKeysetError(new Error('network down')), false);
   });
 });
+
+describe('mint quote status', () => {
+  // Fake mint answering NUT-23 quote checks. Its keys only matter when these
+  // tests run on their own, before another test has loaded the wallet.
+  const pair = createNewMintKeys(4, undefined, { versionByte: 0 });
+  const keysHex = Object.fromEntries(
+    Object.entries(pair.pubKeys).map(([amount, key]) => [amount, Buffer.from(key).toString('hex')])
+  );
+  const quote = (id: string, state: string, expiry: number | null) => ({
+    quote: id,
+    request: 'lnbc100n1fake',
+    amount: 10,
+    unit: 'sat',
+    state,
+    expiry,
+  });
+  // Order matters: '/v1/keysets' must be matched before its prefix '/v1/keys'
+  const responses: Record<string, unknown> = {
+    '/v1/mint/quote/bolt11/paid-quote': quote('paid-quote', 'PAID', 1_700_000_000),
+    '/v1/mint/quote/bolt11/open-quote': quote('open-quote', 'UNPAID', null),
+    '/v1/keysets': { keysets: [{ id: pair.keysetId, unit: 'sat', active: true }] },
+    '/v1/keys': { keysets: [{ id: pair.keysetId, unit: 'sat', keys: keysHex }] },
+    '/v1/info': {
+      name: 'test-mint',
+      pubkey: keysHex['1'],
+      version: 'test/1.0',
+      nuts: { '4': { methods: [{ method: 'bolt11', unit: 'sat' }], disabled: false } },
+    },
+  };
+
+  function mockMint(requestedPaths: string[]) {
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedPaths.push(url);
+      const path = Object.keys(responses).find((p) => url.includes(p));
+      if (!path) return new Response('not found', { status: 404 });
+      return new Response(JSON.stringify(responses[path]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+  }
+
+  it('checkMintQuoteStatus reads the state and expiry from the bolt11 quote check', async () => {
+    const requestedPaths: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockMint(requestedPaths);
+    try {
+      const { checkMintQuoteStatus } = await import('./cashu.js');
+      assert.deepEqual(await checkMintQuoteStatus('paid-quote'), {
+        state: 'PAID',
+        expiresAt: 1_700_000_000,
+      });
+      assert.ok(requestedPaths.some((p) => p.endsWith('/v1/mint/quote/bolt11/paid-quote')));
+    } finally {
+      globalThis.fetch = originalFetch;
+      setGlobalRequestOptions({});
+    }
+  });
+
+  it('checkMintQuoteStatus reports a missing expiry as null instead of failing', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockMint([]);
+    try {
+      const { checkMintQuoteStatus } = await import('./cashu.js');
+      assert.deepEqual(await checkMintQuoteStatus('open-quote'), {
+        state: 'UNPAID',
+        expiresAt: null,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      setGlobalRequestOptions({});
+    }
+  });
+});

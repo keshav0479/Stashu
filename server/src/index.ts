@@ -15,7 +15,7 @@ import { requireAuth } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';
 import { requestBodyLimit } from './middleware/requestBodyLimit.js';
 
-import { recoverPendingMelts, recoverMintFailures } from './lib/recovery.js';
+import { recoverPendingMelts, recoverMintFailures, cleanupStaleQuotes } from './lib/recovery.js';
 
 const app = new Hono();
 
@@ -102,10 +102,17 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', serveStatic({ root: './client/dist', path: 'index.html' }));
 }
 
-// Startup recovery — resolve in-flight melts and retry failed mints
+// Startup recovery — resolve in-flight melts, retry failed mints, then settle
+// or clear Lightning quotes nobody polled
 recoverPendingMelts()
   .then(() => recoverMintFailures())
+  .then(() => cleanupStaleQuotes())
   .catch((err) => console.error('Recovery error:', err));
+
+// Keep checking for stale Lightning quotes every 5 minutes
+setInterval(() => {
+  cleanupStaleQuotes().catch((err) => console.error('Stale quote cleanup error:', err));
+}, 300_000).unref();
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`🐿️ Stashu server running on http://localhost:${port}`);
