@@ -104,7 +104,7 @@ export function useUnlock(stashId: string) {
       }));
       const stash = await getStashInfo(stashId);
       cachedSealedPackage = null;
-      if (stash.blobFormat === STASH_BLOB_FORMAT && stash.generatedPreview?.kind === 'text-peek') {
+      if (stash.blobFormat === STASH_BLOB_FORMAT) {
         if (!stash.sealedBlobUrl || !stash.blobSha256) {
           throw new Error('Sealed stash package metadata is missing');
         }

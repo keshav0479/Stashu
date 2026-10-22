@@ -46,8 +46,8 @@ account is required.
 3. **Server stores stash state** - encrypted metadata, payment state, and preview
    proof data are saved in SQLite.
 4. **Buyer opens the stash** - public metadata and any Verified Peek data are
-   loaded before payment. When a public peek exists, the buyer also fetches and
-   hash-checks the sealed Blossom blob before payment is enabled.
+   loaded before payment. The buyer also fetches and hash-checks the sealed
+   Blossom blob before payment is enabled, whether or not a public peek exists.
 5. **Buyer pays** - either by paying a Lightning invoice or pasting a Cashu ecash
    token.
 6. **Browser unlocks the file** - after payment, the server returns the decryption
@@ -94,8 +94,9 @@ Under the hood:
 - The server stores the proof data, but the proof secret needed for the final file
   check is returned only after unlock.
 
-For now, public previews are generated for text-like files. Other file types still
-get a no-public-preview commitment check after unlock.
+For now, public previews are generated for text-like files. Other file types get no
+public excerpt, but their sealed package is still bound to its commitment before
+payment and checked again after unlock.
 
 ## Public Manifest
 
@@ -141,9 +142,12 @@ after a valid unlock.
 - **Sensitive database fields** are encrypted at rest, including stash metadata,
   blob URLs, file keys, preview proof fields, seller payment tokens, and Lightning
   addresses.
-- **Verified Peek integrity** checks that a public text excerpt is a literal
-  segment of the hash-verified sealed blob before payment, then checks the
-  reconstructed file against its content commitment after unlock.
+- **Sealed package integrity** binds every sealed blob to its published
+  commitment before payment, so the package a buyer pays for is the package they
+  receive. Verified Peek adds to that: a public text excerpt is also checked to be
+  a literal segment of that same blob. Stashes with no public preview get the
+  binding check only. Both are re-checked against the content commitment after
+  unlock.
 - **Seller auth** uses NIP-98 signatures from the seller's local Nostr keypair.
 - **Payment integrity** uses quote-to-stash binding, processing locks, and
   idempotent unlock paths to guard against replay and double-processing bugs.
@@ -151,18 +155,18 @@ after a valid unlock.
 
 ### Known Limits
 
-| Limit                  | Details                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trusted server         | The server currently stores encrypted file keys and decides when to release them after payment.                                                                                                                                                                                                                                                                                                            |
-| Server compromise      | `TOKEN_ENCRYPTION_KEY` is co-located with the database. A root compromise can decrypt encrypted database fields.                                                                                                                                                                                                                                                                                           |
-| Payment custody        | Seller Cashu tokens are held by the server until withdrawal or auto-settlement.                                                                                                                                                                                                                                                                                                                            |
-| Browser key storage    | The seller Nostr private key lives in browser local storage.                                                                                                                                                                                                                                                                                                                                               |
-| Preview privacy        | Verified Peek reveals the selected preview before payment. Stashu uses conservative defaults and limits, but the seller still chooses what to show.                                                                                                                                                                                                                                                        |
-| Seller quality         | Verified Peek proves that the public excerpt is used by the locked package. It cannot prove before unlock that hidden regions are useful, representative, or decrypt successfully. A dishonest seller can still sell low-quality content or deliberately break delivery.                                                                                                                                   |
-| Prepayment bandwidth   | Sealed blobs with a public peek are fetched and hash-checked before payment so the buyer can verify the locked package. Large previewed files therefore consume download bandwidth before unlock.                                                                                                                                                                                                          |
-| Single mint dependency | The server currently uses one configured Cashu mint through `MINT_URL`.                                                                                                                                                                                                                                                                                                                                    |
-| Re-download window     | Buyers re-download with a per-device claim token in browser local storage that expires after the seller's window (1-30 days, default 7). It is not a shareable link, so clearing the browser ends re-download access.                                                                                                                                                                                      |
-| Blob storage trust     | Sealed blobs live on public Blossom servers (default presets: Ditto, Data Haus) that publish no retention guarantee or SLA and can change upload policy at any time — blossom.primal.net did exactly that and now rejects encrypted blobs. Uploads fail over across presets and mirror for redundancy, but sellers should keep their original files. Self-hosting a Blossom server is the reliable option. |
+| Limit                  | Details                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trusted server         | The server currently stores encrypted file keys and decides when to release them after payment.                                                                                                                                                                                                                                                                                                                                                                               |
+| Server compromise      | `TOKEN_ENCRYPTION_KEY` is co-located with the database. A root compromise can decrypt encrypted database fields.                                                                                                                                                                                                                                                                                                                                                              |
+| Payment custody        | Seller Cashu tokens are held by the server until withdrawal or auto-settlement.                                                                                                                                                                                                                                                                                                                                                                                               |
+| Browser key storage    | The seller Nostr private key lives in browser local storage.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Preview privacy        | Verified Peek reveals the selected preview before payment. Stashu uses conservative defaults and limits, but the seller still chooses what to show.                                                                                                                                                                                                                                                                                                                           |
+| Seller quality         | Verified Peek proves that the public excerpt is used by the locked package. The sealed package check proves only that the blob matches its published commitment, which is the sole prepayment guarantee for a stash with no public preview and says nothing about the content. Neither can prove before unlock that hidden regions are useful, representative, or decrypt successfully. A dishonest seller can still sell low-quality content or deliberately break delivery. |
+| Prepayment bandwidth   | Every sealed blob is fetched and hash-checked before payment so the buyer can verify the locked package, whether or not the stash has a public preview. Opening any stash link therefore costs a full download before unlock, bounded by the 50 MB upload limit (100 MB at the API).                                                                                                                                                                                          |
+| Single mint dependency | The server currently uses one configured Cashu mint through `MINT_URL`.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Re-download window     | Buyers re-download with a per-device claim token in browser local storage that expires after the seller's window (1-30 days, default 7). It is not a shareable link, so clearing the browser ends re-download access.                                                                                                                                                                                                                                                         |
+| Blob storage trust     | Sealed blobs live on public Blossom servers (default presets: Ditto, Data Haus) that publish no retention guarantee or SLA and can change upload policy at any time — blossom.primal.net did exactly that and now rejects encrypted blobs. Uploads fail over across presets and mirror for redundancy, but sellers should keep their original files. Self-hosting a Blossom server is the reliable option.                                                                    |
 
 ## Quick Start
 
