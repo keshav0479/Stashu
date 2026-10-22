@@ -306,6 +306,8 @@ export interface CardContent {
   fileName: string;
   fileSize: number;
   priceSats: number;
+  /** priceSats is a minimum: the price line reads "from …". */
+  payWhatYouWant?: boolean;
 }
 
 function textEl(
@@ -320,6 +322,21 @@ function textEl(
   return (
     `<text x="${x}" y="${y}" font-family="Outfit" font-weight="${weight}" ` +
     `font-size="${size}" fill="${fill}"${extra}>${escapeHtml(text)}</text>`
+  );
+}
+
+/**
+ * The big orange price. A pay-what-you-want price is a floor, so it gets a
+ * quieter "from" in front rather than a different number.
+ */
+function priceLine(content: CardContent): string {
+  const price = escapeHtml(formatSats(content.priceSats));
+  const from = content.payWhatYouWant
+    ? `<tspan font-size="40" font-weight="400" fill="${COLORS.textSecondary}">from </tspan>`
+    : '';
+  return (
+    `<text x="${PADDING}" y="480" font-family="Outfit" font-weight="700" font-size="76" ` +
+    `fill="${COLORS.accent}">${from}${price}</text>`
   );
 }
 
@@ -378,7 +395,7 @@ export function buildCardSvg(content: CardContent): string {
     )
     .join('\n  ')}
 
-  ${textEl(formatSats(content.priceSats), PADDING, 480, 76, 700, COLORS.accent)}
+  ${priceLine(content)}
   ${textEl(fileLine, PADDING, 536, 30, 400, COLORS.textSecondary)}
 
   <rect x="${PADDING}" y="566" width="${contentWidth}" height="1" fill="${COLORS.hairline}" />

@@ -1,14 +1,17 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { randomBytes } from 'crypto';
 import db from '../db/index.js';
 import {
   createPaymentInvoice,
   checkPaymentStatus,
+  getMaxMintAmount,
   mintAfterPayment,
   verifyAndSwapToken,
 } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
+import { resolvePaymentAmount } from '../lib/pricing.js';
 import type {
+  PayInvoiceRequest,
   PayInvoiceResponse,
   PayStatusResponse,
   StashProofSecret,
@@ -41,6 +44,23 @@ function decryptPreviewSecret(value: string | null): StashProofSecret | undefine
   return value ? (JSON.parse(decrypt(value)) as StashProofSecret) : undefined;
 }
 
+/**
+ * The request's JSON object, {} when there is no body at all (clients from
+ * before pay-what-you-want send none), or null when the body isn't an object.
+ */
+async function readOptionalJson<T>(c: Context): Promise<Partial<T> | null> {
+  const text = await c.req.text();
+  if (!text.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Partial<T>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export const payRoutes = new Hono();
 
 // POST /api/pay/:id/invoice — Create a Lightning invoice for a stash
@@ -48,29 +68,43 @@ payRoutes.post('/:id/invoice', async (c) => {
   try {
     const stashId = c.req.param('id');
 
+    const body = await readOptionalJson<PayInvoiceRequest>(c);
+    if (!body) {
+      return c.json<APIResponse<never>>({ success: false, error: 'Invalid JSON body' }, 400);
+    }
+
     // Get stash
-    const stash = db.prepare('SELECT id, price_sats FROM stashes WHERE id = ?').get(stashId) as
-      | { id: string; price_sats: number }
-      | undefined;
+    const stash = db
+      .prepare('SELECT id, price_sats, pay_what_you_want FROM stashes WHERE id = ?')
+      .get(stashId) as { id: string; price_sats: number; pay_what_you_want: number } | undefined;
 
     if (!stash) {
       return c.json<APIResponse<never>>({ success: false, error: 'Stash not found' }, 404);
     }
 
-    // Create a Lightning invoice via the Cashu mint
-    const { invoice, quoteId, expiresAt } = await createPaymentInvoice(stash.price_sats);
+    const maxSats = stash.pay_what_you_want === 1 ? await getMaxMintAmount() : null;
+    const amount = resolvePaymentAmount(stash, body.amountSats, maxSats);
+    if (!amount.ok) {
+      return c.json<APIResponse<never>>({ success: false, error: amount.error }, 400);
+    }
 
-    // Bind quoteId → stashId immediately (prevents cross-stash replay)
+    // Create a Lightning invoice via the Cashu mint
+    const { invoice, quoteId, expiresAt } = await createPaymentInvoice(amount.amountSats);
+
+    // Bind quoteId → stashId immediately (prevents cross-stash replay), and
+    // record the amount: minting must claim exactly what this invoice paid, and
+    // NUT-04 leaves anything under-claimed stranded on the quote.
     db.prepare(
-      `INSERT INTO payments (id, stash_id, status, token_hash) VALUES (?, ?, 'pending', ?)`
-    ).run(`ln-${quoteId}`, stashId, quoteId);
+      `INSERT INTO payments (id, stash_id, status, token_hash, amount_sats)
+       VALUES (?, ?, 'pending', ?, ?)`
+    ).run(`ln-${quoteId}`, stashId, quoteId, amount.amountSats);
 
     return c.json<APIResponse<PayInvoiceResponse>>({
       success: true,
       data: {
         invoice,
         quoteId,
-        amountSats: stash.price_sats,
+        amountSats: amount.amountSats,
         expiresAt,
       },
     });
@@ -248,13 +282,17 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
     }
 
     const windowSeconds = stash.download_window_seconds ?? DEFAULT_DOWNLOAD_WINDOW_SECONDS;
+    // The invoice's own amount, never the stash price: a pay-what-you-want
+    // invoice can be for more. Rows from before migration 13 have no amount
+    // and were made for exactly the price.
+    const amountSats = existingPayment.amount_sats ?? stash.price_sats;
 
     try {
       // Mint tokens from the paid invoice
-      const mintedToken = await mintAfterPayment(stash.price_sats, quoteId);
+      const mintedToken = await mintAfterPayment(amountSats, quoteId);
 
       // Swap minted tokens to create seller's token
-      const swapResult = await verifyAndSwapToken(mintedToken, stash.price_sats);
+      const swapResult = await verifyAndSwapToken(mintedToken, amountSats);
 
       if (!swapResult.success) {
         db.prepare(`UPDATE payments SET status = 'failed' WHERE id = ?`).run(paymentId);
@@ -277,8 +315,8 @@ payRoutes.get('/:id/status/:quoteId', async (c) => {
       const claimExpiresAt = Math.floor(Date.now() / 1000) + windowSeconds;
 
       db.prepare(
-        `UPDATE payments SET status = 'paid', seller_token = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
-      ).run(encrypt(swapResult.sellerToken), claimToken, claimExpiresAt, paymentId);
+        `UPDATE payments SET status = 'paid', seller_token = ?, amount_sats = ?, claim_token = ?, claim_expires_at = ?, paid_at = unixepoch() WHERE id = ?`
+      ).run(encrypt(swapResult.sellerToken), amountSats, claimToken, claimExpiresAt, paymentId);
 
       // Trigger auto-settlement check (fire-and-forget)
       tryAutoSettle(stash.seller_pubkey).catch((err) =>

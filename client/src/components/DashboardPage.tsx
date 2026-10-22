@@ -377,7 +377,9 @@ export function DashboardPage() {
                         {stash.title}
                       </h3>
                       <p className="text-slate-500 text-sm">
-                        Created {formatDate(stash.createdAt)} • {stash.priceSats} sats
+                        Created {formatDate(stash.createdAt)} •{' '}
+                        {stash.payWhatYouWant ? 'from ' : ''}
+                        {stash.priceSats} sats
                       </p>
                     </div>
 

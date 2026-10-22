@@ -8,6 +8,7 @@ import type {
   DashboardResponse,
   WithdrawQuoteResponse,
   WithdrawResponse,
+  PayInvoiceRequest,
   PayInvoiceResponse,
   PayStatusResponse,
   LnAddressResolveResponse,
@@ -59,11 +60,19 @@ export async function getStashInfo(id: string): Promise<StashPublicInfo> {
 /**
  * Unlock a stash with a Cashu token
  */
-export async function unlockStash(id: string, token: string): Promise<UnlockResponse> {
+/**
+ * @param amountSats pay-what-you-want only: the amount the buyer chose, which
+ * the token must credit exactly. Omit for a fixed price.
+ */
+export async function unlockStash(
+  id: string,
+  token: string,
+  amountSats?: number
+): Promise<UnlockResponse> {
   const response = await fetch(`${API_BASE}/unlock/${id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token } as UnlockRequest),
+    body: JSON.stringify({ token, amountSats } satisfies UnlockRequest),
   });
 
   const result: APIResponse<UnlockResponse> = await response.json();
@@ -161,11 +170,24 @@ export async function executeWithdraw(
 /**
  * Create a Lightning invoice for paying for a stash
  */
-export async function createPayInvoice(stashId: string): Promise<PayInvoiceResponse> {
+/**
+ * @param amountSats pay-what-you-want only: the amount the buyer chose. Omit
+ * for a fixed price, and no body is sent at all.
+ */
+export async function createPayInvoice(
+  stashId: string,
+  amountSats?: number
+): Promise<PayInvoiceResponse> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/pay/${stashId}/invoice`, {
       method: 'POST',
+      ...(amountSats !== undefined
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amountSats } satisfies PayInvoiceRequest),
+          }
+        : {}),
       signal: AbortSignal.timeout(INVOICE_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {

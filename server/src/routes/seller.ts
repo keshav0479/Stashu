@@ -57,9 +57,9 @@ sellerRoutes.get('/:pubkey', async (c) => {
     }
 
     const stmt = db.prepare(`
-      SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
-             blob_format, preview_url, generated_preview_payload, preview_proof,
-             download_window_seconds, created_at
+      SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want,
+             blob_url, blob_sha256, blob_format, preview_url, generated_preview_payload,
+             preview_proof, download_window_seconds, created_at
       FROM stashes
       WHERE seller_pubkey = ? AND show_in_storefront = 1
       ORDER BY created_at DESC
@@ -73,6 +73,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       | 'file_name'
       | 'file_size'
       | 'price_sats'
+      | 'pay_what_you_want'
       | 'blob_url'
       | 'blob_sha256'
       | 'blob_format'
@@ -90,6 +91,7 @@ sellerRoutes.get('/:pubkey', async (c) => {
       fileName: decrypt(row.file_name),
       fileSize: row.file_size,
       priceSats: row.price_sats,
+      payWhatYouWant: row.pay_what_you_want === 1,
       ...sealedStashFields(row),
       previewUrl: row.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(row.generated_preview_payload),

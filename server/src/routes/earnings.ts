@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import db from '../db/index.js';
+import db, { PAYMENT_AMOUNT_SQL } from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type { EarningsResponse, APIResponse } from '../../../shared/types.js';
@@ -13,16 +13,16 @@ earningsRoutes.get('/:pubkey', async (c) => {
 
     // Get all paid payments for stashes owned by this seller
     const stmt = db.prepare(`
-      SELECT p.seller_token, s.price_sats
+      SELECT p.seller_token, ${PAYMENT_AMOUNT_SQL} AS amount_sats
       FROM payments p
       JOIN stashes s ON p.stash_id = s.id
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
     `);
 
-    const results = stmt.all(pubkey) as Array<{ seller_token: string; price_sats: number }>;
+    const results = stmt.all(pubkey) as Array<{ seller_token: string; amount_sats: number }>;
 
     const tokens = results.map((r) => decrypt(r.seller_token));
-    const totalSats = results.reduce((sum, r) => sum + r.price_sats, 0);
+    const totalSats = results.reduce((sum, r) => sum + r.amount_sats, 0);
 
     return c.json<APIResponse<EarningsResponse>>({
       success: true,

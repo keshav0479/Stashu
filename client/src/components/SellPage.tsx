@@ -230,6 +230,7 @@ export function SellPage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [payWhatYouWant, setPayWhatYouWant] = useState(false);
   const [downloadWindowSeconds, setDownloadWindowSeconds] = useState<number>(
     DEFAULT_DOWNLOAD_WINDOW_SECONDS
   );
@@ -571,6 +572,7 @@ export function SellPage() {
       title,
       description: description || undefined,
       priceSats,
+      payWhatYouWant,
       downloadWindowSeconds,
       peekMode,
       previewLineLimit: activePreviewPreset.lineLimit,
@@ -962,18 +964,34 @@ export function SellPage() {
           </div>
 
           <div>
-            <label className="block text-slate-300 mb-2">Price (sats) *</label>
+            <label className="block text-slate-300 mb-2">
+              {payWhatYouWant ? 'Minimum price (sats) *' : 'Price (sats) *'}
+            </label>
             <input
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               placeholder="100"
               min="1"
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 
+              className="w-full px-4 py-3 bg-slate-800 border border-slate-600
                        rounded-xl text-white placeholder-slate-500
                        focus:outline-none focus:border-orange-500"
             />
             {priceError && <p className="mt-2 text-red-400 text-sm">{priceError}</p>}
+            <label className="mt-3 flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={payWhatYouWant}
+                onChange={(e) => setPayWhatYouWant(e.target.checked)}
+                className="mt-1 h-4 w-4 shrink-0 accent-orange-500"
+              />
+              <span>
+                <span className="block text-sm text-slate-300">Let buyers pay more</span>
+                <span className="block text-xs text-slate-500">
+                  Your price becomes the minimum. Buyers can choose to pay extra.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div>

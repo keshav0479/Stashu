@@ -147,6 +147,9 @@ after a valid unlock.
 - **Seller auth** uses NIP-98 signatures from the seller's local Nostr keypair.
 - **Payment integrity** uses quote-to-stash binding, processing locks, and
   idempotent unlock paths to guard against replay and double-processing bugs.
+  Each payment records the amount it credits, decided by the server: a
+  pay-what-you-want buyer can't pay under the minimum, and a Cashu token must
+  match the chosen amount exactly, so pasting the wrong token can't overpay.
 - **Rate limiting** protects public unlock, payment, stash, and seller routes.
 
 ### Known Limits

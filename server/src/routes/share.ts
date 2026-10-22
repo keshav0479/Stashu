@@ -55,7 +55,14 @@ async function loadIndexHtml(): Promise<string | null> {
 
 type ShareStashRow = Pick<
   StashRow,
-  'id' | 'title' | 'description' | 'file_name' | 'file_size' | 'price_sats' | 'preview_url'
+  | 'id'
+  | 'title'
+  | 'description'
+  | 'file_name'
+  | 'file_size'
+  | 'price_sats'
+  | 'pay_what_you_want'
+  | 'preview_url'
 >;
 
 // Only ever selects public columns — secret_key, preview_secret and blob_url
@@ -63,7 +70,7 @@ type ShareStashRow = Pick<
 function getShareStash(id: string): StashShareInfo | null {
   const row = db
     .prepare(
-      `SELECT id, title, description, file_name, file_size, price_sats, preview_url
+      `SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want, preview_url
        FROM stashes WHERE id = ?`
     )
     .get(id) as ShareStashRow | null;
@@ -77,6 +84,7 @@ function getShareStash(id: string): StashShareInfo | null {
     fileName: decrypt(row.file_name),
     fileSize: row.file_size,
     priceSats: row.price_sats,
+    payWhatYouWant: row.pay_what_you_want === 1,
     previewUrl: row.preview_url ?? undefined,
   };
 }
@@ -167,6 +175,7 @@ export async function shareCardImageHandler(c: Context): Promise<Response> {
         fileName: stash.fileName,
         fileSize: stash.fileSize,
         priceSats: stash.priceSats,
+        payWhatYouWant: stash.payWhatYouWant,
       });
 
       if (png) {

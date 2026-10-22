@@ -167,7 +167,7 @@ export function useUnlock(stashId: string) {
   }, [stashId]);
 
   const submitToken = useCallback(
-    async (token: string) => {
+    async (token: string, amountSats?: number) => {
       if (!token.trim()) {
         setState((s) => ({ ...s, error: 'Please enter a Cashu token' }));
         return;
@@ -175,7 +175,7 @@ export function useUnlock(stashId: string) {
 
       try {
         setState((s) => ({ ...s, status: 'unlocking', error: null }));
-        const unlockResult = await unlockStash(stashId, token);
+        const unlockResult = await unlockStash(stashId, token, amountSats);
 
         // Store claim token for re-download
         if (unlockResult.claimToken) {

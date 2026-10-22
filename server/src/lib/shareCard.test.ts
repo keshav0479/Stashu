@@ -205,6 +205,11 @@ describe('buildCardSvg', () => {
     assert.ok(svg.includes('420 B'));
     assert.ok(!svg.includes('·'), 'separator should be dropped with nothing to separate');
   });
+
+  it('puts "from" before a pay-what-you-want price, and only then', () => {
+    assert.match(buildCardSvg(content({ payWhatYouWant: true })), />from <\/tspan>2,000 sats</);
+    assert.ok(!buildCardSvg(content()).includes('from '));
+  });
 });
 
 describe('renderCardPng', () => {

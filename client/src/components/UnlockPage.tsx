@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useUnlock } from '../lib/useUnlock';
 import { createPayInvoice, checkPayStatus } from '../lib/api';
+import { AmountPicker } from './AmountPicker';
 import { verifyGeneratedPreviewBundle } from '../lib/verifiedPreview';
 import { STASH_BLOB_FORMAT } from '../lib/stashPackage';
 import type { StashProofSecret, TextPreviewMetadata } from '../../../shared/types';
@@ -44,6 +45,9 @@ export function UnlockPage() {
   const unlock = useUnlock(id || '');
   const [token, setToken] = useState('');
   const [tab, setTab] = useState<PayTab>('lightning');
+  // Pay what you want: the amount box's text, or null until the buyer edits
+  // it, which shows the minimum.
+  const [amountInput, setAmountInput] = useState<string | null>(null);
 
   // Lightning payment state
   const [invoice, setInvoice] = useState<string | null>(null);
@@ -55,6 +59,7 @@ export function UnlockPage() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const quoteIdRef = useRef<string | null>(null);
   const previewVerification = useMemo(
     () => verifyGeneratedPreviewBundle(unlock.stash?.generatedPreview, unlock.stash?.previewProof),
     [unlock.stash?.generatedPreview, unlock.stash?.previewProof]
@@ -83,6 +88,19 @@ export function UnlockPage() {
     (unlock.stash.blobFormat !== STASH_BLOB_FORMAT ||
       unlock.stash.previewProof?.version !== 'stashu-preview-v2' ||
       unlock.stash.previewProof.sealedBlobSha256 !== unlock.stash.blobSha256);
+
+  // For pay what you want, priceSats is the floor and the buyer names the
+  // amount. The server re-checks all of this; here it only drives the form.
+  const payWhatYouWant = unlock.stash?.payWhatYouWant ?? false;
+  const priceSats = unlock.stash?.priceSats ?? 0;
+  const amountText = amountInput ?? String(priceSats);
+  const typedAmount = /^\d+$/.test(amountText.trim()) ? Number(amountText.trim()) : NaN;
+  const amountError =
+    payWhatYouWant && !(Number.isSafeInteger(typedAmount) && typedAmount >= priceSats)
+      ? `Enter at least ${priceSats.toLocaleString('en-US')} sats`
+      : null;
+  // What this buyer pays: the chosen amount, or the price. Null while invalid.
+  const payAmount = payWhatYouWant ? (amountError ? null : typedAmount) : priceSats;
 
   useEffect(() => {
     if (id) {
@@ -142,13 +160,17 @@ export function UnlockPage() {
 
   // Helper: start timer + polling for a given invoice session
   const startTimerAndPolling = useCallback(
-    (invoiceStr: string, quoteId: string, expiresAt: number) => {
+    (invoiceStr: string, quoteId: string, expiresAt: number, amountSats?: number) => {
       setInvoice(invoiceStr);
+      quoteIdRef.current = quoteId;
+      // A resumed pay-what-you-want invoice may be for more than the minimum:
+      // show its real amount. Invoices saved before this field existed lack it.
+      if (amountSats !== undefined) setAmountInput(String(amountSats));
 
       if (id) {
         sessionStorage.setItem(
           `stashu-invoice-${id}`,
-          JSON.stringify({ invoice: invoiceStr, quoteId, expiresAt })
+          JSON.stringify({ invoice: invoiceStr, quoteId, expiresAt, amountSats })
         );
       }
 
@@ -213,41 +235,51 @@ export function UnlockPage() {
       setLnError('Preview verification failed. Payment is disabled for this stash.');
       return;
     }
+    // Only pay-what-you-want sends an amount; a fixed price sends none.
+    const amountSats = payWhatYouWant ? payAmount : undefined;
+    if (amountSats === null) {
+      setLnError(amountError);
+      return;
+    }
     setLnLoading(true);
     setLnError(null);
 
     try {
-      const result = await createPayInvoice(id);
-      startTimerAndPolling(result.invoice, result.quoteId, result.expiresAt);
+      const result = await createPayInvoice(id, amountSats);
+      startTimerAndPolling(result.invoice, result.quoteId, result.expiresAt, result.amountSats);
     } catch (err) {
       setLnError(err instanceof Error ? err.message : 'Failed to create invoice');
     } finally {
       setLnLoading(false);
     }
-  }, [id, previewProofInvalid, startTimerAndPolling]);
+  }, [id, previewProofInvalid, payWhatYouWant, payAmount, amountError, startTimerAndPolling]);
+
+  // Picks up an unexpired invoice saved earlier in this tab. The buyer may
+  // already have paid it, so it must keep being polled across reloads.
+  const resumeSavedInvoice = useCallback((): boolean => {
+    if (!id) return false;
+    try {
+      const saved = sessionStorage.getItem(`stashu-invoice-${id}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const remaining = parsed.expiresAt - Math.floor(Date.now() / 1000);
+        if (remaining > 10) {
+          // Resume polling the existing invoice
+          startTimerAndPolling(parsed.invoice, parsed.quoteId, parsed.expiresAt, parsed.amountSats);
+          return true;
+        }
+        // Expired — clean up
+        sessionStorage.removeItem(`stashu-invoice-${id}`);
+      }
+    } catch {
+      // Corrupted storage — ignore
+    }
+    return false;
+  }, [id, startTimerAndPolling]);
 
   const startOrResumeInvoice = useCallback(() => {
-    if (id) {
-      try {
-        const saved = sessionStorage.getItem(`stashu-invoice-${id}`);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          const remaining = parsed.expiresAt - Math.floor(Date.now() / 1000);
-          if (remaining > 10) {
-            // Resume polling the existing invoice
-            startTimerAndPolling(parsed.invoice, parsed.quoteId, parsed.expiresAt);
-            return;
-          }
-          // Expired — clean up
-          sessionStorage.removeItem(`stashu-invoice-${id}`);
-        }
-      } catch {
-        // Corrupted storage — ignore
-      }
-    }
-
-    createInvoice();
-  }, [id, createInvoice, startTimerAndPolling]);
+    if (!resumeSavedInvoice()) createInvoice();
+  }, [resumeSavedInvoice, createInvoice]);
 
   // Auto-create or resume invoice when Lightning tab is active and stash is loaded
   useEffect(() => {
@@ -263,6 +295,13 @@ export function UnlockPage() {
       return;
     }
 
+    // A pay-what-you-want buyer picks the amount first, so a new invoice waits
+    // for their click; only one they already started is picked back up.
+    if (unlock.stash.payWhatYouWant) {
+      resumeSavedInvoice();
+      return;
+    }
+
     // Records the invoice the mint hands back, so the extra render here is intentional.
     startOrResumeInvoice();
   }, [
@@ -272,17 +311,55 @@ export function UnlockPage() {
     lnLoading,
     unlock.status,
     startOrResumeInvoice,
+    resumeSavedInvoice,
     previewProofInvalid,
   ]);
 
-  const refreshInvoice = () => {
+  const clearInvoice = () => {
     setInvoice(null);
     setTimeLeft(null);
     setLnError(null);
     if (pollRef.current) clearInterval(pollRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
+    pollRef.current = null;
+    timerRef.current = null;
+    quoteIdRef.current = null;
     if (id) sessionStorage.removeItem(`stashu-invoice-${id}`);
+  };
+
+  const refreshInvoice = () => {
+    clearInvoice();
     createInvoice();
+  };
+
+  // Drops a live invoice so the buyer can pick another amount, checking it one
+  // last time first: they may have paid it since the last poll, and a paid
+  // invoice that nobody polls is never minted. If the check can't run, the
+  // invoice stays — better a stuck form than a lost payment.
+  const changeAmount = async () => {
+    const quoteId = quoteIdRef.current;
+    if (id && quoteId) {
+      try {
+        const status = await checkPayStatus(id, quoteId);
+        if (status.paid && status.secretKey && status.blobUrl) {
+          clearInvoice();
+          handleLnUnlock({
+            secretKey: status.secretKey,
+            blobUrl: status.blobUrl,
+            blobSha256: status.blobSha256,
+            fileName: status.fileName,
+            claimToken: status.claimToken,
+            claimExpiresAt: status.claimExpiresAt,
+            previewSecret: status.previewSecret,
+          });
+          return;
+        }
+      } catch {
+        setLnError("Couldn't check this invoice. Try again in a moment.");
+        return;
+      }
+    }
+    clearInvoice();
   };
 
   const formatCountdown = (seconds: number): string => {
@@ -546,8 +623,14 @@ export function UnlockPage() {
               </p>
             </div>
             <div className="bg-slate-900/50 rounded-xl p-4">
-              <p className="text-slate-500 text-sm mb-1">Price</p>
-              <p className="text-orange-400 font-bold text-xl">{unlock.stash?.priceSats} sats</p>
+              <p className="text-slate-500 text-sm mb-1">
+                {payWhatYouWant ? 'Pay what you want' : 'Price'}
+              </p>
+              <p className="text-orange-400 font-bold text-xl">
+                {payWhatYouWant
+                  ? `from ${priceSats.toLocaleString('en-US')} sats`
+                  : `${unlock.stash?.priceSats} sats`}
+              </p>
             </div>
           </div>
 
@@ -633,6 +716,17 @@ export function UnlockPage() {
 
         {!previewProofInvalid && (
           <>
+            {payWhatYouWant && (
+              <AmountPicker
+                minSats={priceSats}
+                value={amountText}
+                onChange={setAmountInput}
+                error={amountError}
+                locked={invoice !== null}
+                onChangeAmount={changeAmount}
+              />
+            )}
+
             {/* Payment Tabs */}
             <div className="flex mb-2 bg-slate-800/50 rounded-xl p-1">
               <button
@@ -667,6 +761,20 @@ export function UnlockPage() {
             {/* Lightning Tab */}
             {tab === 'lightning' && (
               <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
+                {payWhatYouWant && !invoice && !lnLoading && (
+                  <button
+                    type="button"
+                    onClick={createInvoice}
+                    disabled={payAmount === null}
+                    className="btn-primary w-full px-6 py-4 text-lg"
+                  >
+                    <Zap className="w-5 h-5" />
+                    {payAmount === null
+                      ? 'Get invoice'
+                      : `Get invoice for ${payAmount.toLocaleString('en-US')} sats`}
+                  </button>
+                )}
+
                 {lnLoading && !invoice && (
                   <div className="text-center py-8">
                     <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto mb-3" />
@@ -812,17 +920,31 @@ export function UnlockPage() {
                   </p>
                 </div>
 
+                {payWhatYouWant && payAmount !== null && (
+                  <p className="mb-3 text-center text-xs text-slate-500">
+                    The token must be worth exactly {payAmount.toLocaleString('en-US')} sats, so a
+                    wrong token can't overpay.
+                  </p>
+                )}
+
                 {/* Unlock Button */}
                 <button
-                  onClick={() => unlock.submitToken(token)}
+                  onClick={() =>
+                    unlock.submitToken(token, payWhatYouWant ? (payAmount ?? undefined) : undefined)
+                  }
                   disabled={
-                    !token.trim() || unlock.status === 'unlocking' || unlock.status === 'decrypting'
+                    !token.trim() ||
+                    payAmount === null ||
+                    unlock.status === 'unlocking' ||
+                    unlock.status === 'decrypting'
                   }
                   className="btn-primary w-full px-6 py-4 text-lg"
                 >
                   {unlock.status === 'unlocking' || unlock.status === 'decrypting'
                     ? 'Processing...'
-                    : `Unlock for ${unlock.stash?.priceSats} sats`}
+                    : payWhatYouWant
+                      ? `Unlock for ${(payAmount ?? priceSats).toLocaleString('en-US')} sats`
+                      : `Unlock for ${unlock.stash?.priceSats} sats`}
                 </button>
               </>
             )}

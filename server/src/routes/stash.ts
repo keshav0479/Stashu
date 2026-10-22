@@ -478,6 +478,13 @@ stashRoutes.post('/', async (c) => {
       );
     }
 
+    if (body.payWhatYouWant !== undefined && typeof body.payWhatYouWant !== 'boolean') {
+      return c.json<APIResponse<never>>(
+        { success: false, error: 'payWhatYouWant must be a boolean' },
+        400
+      );
+    }
+
     const previewError = validatePreviewBundle(body);
     if (previewError) {
       return c.json<APIResponse<never>>({ success: false, error: previewError }, 400);
@@ -489,9 +496,10 @@ stashRoutes.post('/', async (c) => {
       INSERT INTO stashes (
         id, blob_url, blob_sha256, secret_key, seller_pubkey, price_sats,
         title, description, file_name, file_size, blob_format, preview_url,
-        generated_preview_payload, preview_proof, preview_secret, download_window_seconds
+        generated_preview_payload, preview_proof, preview_secret, download_window_seconds,
+        pay_what_you_want
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -510,7 +518,8 @@ stashRoutes.post('/', async (c) => {
       body.generatedPreview ? stringifyEncryptedJson(body.generatedPreview) : null,
       body.previewProof ? stringifyEncryptedJson(body.previewProof) : null,
       body.previewSecret ? stringifyEncryptedJson(body.previewSecret) : null,
-      body.downloadWindowSeconds ?? null
+      body.downloadWindowSeconds ?? null,
+      body.payWhatYouWant ? 1 : 0
     );
 
     const shareUrl = `/s/${id}`;
@@ -604,6 +613,7 @@ type PublicStashRow = Pick<
   | 'file_name'
   | 'file_size'
   | 'price_sats'
+  | 'pay_what_you_want'
   | 'blob_url'
   | 'blob_sha256'
   | 'blob_format'
@@ -618,9 +628,9 @@ type PublicStashRow = Pick<
 function getPublicStashRow(id: string): PublicStashRow | null {
   return db
     .prepare(
-      `SELECT id, title, description, file_name, file_size, price_sats, blob_url, blob_sha256,
-              blob_format, preview_url, generated_preview_payload, preview_proof,
-              download_window_seconds
+      `SELECT id, title, description, file_name, file_size, price_sats, pay_what_you_want,
+              blob_url, blob_sha256, blob_format, preview_url, generated_preview_payload,
+              preview_proof, download_window_seconds
        FROM stashes WHERE id = ?`
     )
     .get(id) as PublicStashRow | null;
@@ -657,6 +667,7 @@ stashRoutes.get('/:id/manifest', async (c) => {
         size: stash.file_size,
       },
       priceSats: stash.price_sats,
+      payWhatYouWant: stash.pay_what_you_want === 1,
       payment: {
         methods: ['lightning', 'cashu'],
         endpoints: {
@@ -710,6 +721,7 @@ stashRoutes.get('/:id', async (c) => {
       fileName: decrypt(stash.file_name),
       fileSize: stash.file_size,
       priceSats: stash.price_sats,
+      payWhatYouWant: stash.pay_what_you_want === 1,
       ...sealedStashFields(stash),
       previewUrl: stash.preview_url ?? undefined,
       generatedPreview: parseStoredJson<GeneratedPreviewPayload>(stash.generated_preview_payload),

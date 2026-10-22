@@ -297,6 +297,26 @@ export async function meltToLightning(tokens: string[], invoice: string): Promis
 }
 
 /**
+ * The most the mint issues for one Lightning payment: NUT-04's `max_amount`
+ * for bolt11 in sats, or null when the mint doesn't advertise one or can't be
+ * reached. A pay-what-you-want amount above it would be refused at quote time.
+ */
+export async function getMaxMintAmount(): Promise<number | null> {
+  try {
+    const w = await getWallet();
+    const bolt11 = w
+      .getMintInfo()
+      .isSupported(4)
+      .params.find((method) => method.method === 'bolt11' && method.unit === 'sat');
+    return bolt11 && Number.isSafeInteger(bolt11.max_amount) && bolt11.max_amount > 0
+      ? bolt11.max_amount
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Create a Lightning invoice for a buyer to pay via the Cashu mint
  * @param amountSats Amount in satoshis
  * @returns Lightning invoice string and quote ID for polling

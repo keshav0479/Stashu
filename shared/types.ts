@@ -89,6 +89,8 @@ export interface Stash {
   generatedPreview?: GeneratedPreviewPayload;
   previewProof?: StashProof;
   previewSecret?: StashProofSecret;
+  // When true, priceSats is a minimum and the buyer picks the amount.
+  payWhatYouWant?: boolean;
   createdAt: number;
 }
 
@@ -99,7 +101,9 @@ export interface StashPublicInfo {
   description?: string;
   fileName: string;
   fileSize: number;
+  // The minimum when payWhatYouWant is true, otherwise the price.
   priceSats: number;
+  payWhatYouWant: boolean;
   blobFormat?: StashBlobFormat;
   sealedBlobUrl?: string;
   blobSha256?: string;
@@ -141,7 +145,10 @@ export interface StashManifest {
     name: string;
     size: number;
   };
+  // The minimum when payWhatYouWant is true: send amountSats to the invoice
+  // and unlock endpoints to pay more.
   priceSats: number;
+  payWhatYouWant: boolean;
   payment: {
     methods: ['lightning', 'cashu'];
     endpoints: {
@@ -222,6 +229,8 @@ export interface CreateStashRequest {
   previewSecret?: StashProofSecret;
   // One of DOWNLOAD_WINDOW_OPTIONS. Omitted falls back to the default server-side.
   downloadWindowSeconds?: number;
+  // Makes priceSats a minimum; the buyer picks any amount at or above it.
+  payWhatYouWant?: boolean;
 }
 
 export type StashBlobFormat = 'stashu-selective-v1';
@@ -234,6 +243,9 @@ export interface CreateStashResponse {
 // POST /api/unlock/:id
 export interface UnlockRequest {
   token: string;
+  // Pay-what-you-want stashes only: what the buyer chose to pay. The token
+  // must credit exactly this. Omitted means the minimum.
+  amountSats?: number;
 }
 
 export interface UnlockResponse {
@@ -256,6 +268,7 @@ export interface SellerStashStats {
   id: string;
   title: string;
   priceSats: number;
+  payWhatYouWant: boolean;
   unlockCount: number;
   totalEarned: number;
   createdAt: number;
@@ -295,6 +308,12 @@ export interface WithdrawResponse {
 }
 
 // POST /api/pay/:id/invoice
+export interface PayInvoiceRequest {
+  // Pay-what-you-want stashes only: what the buyer chose to pay. Omitted
+  // means the minimum.
+  amountSats?: number;
+}
+
 export interface PayInvoiceResponse {
   invoice: string;
   quoteId: string;

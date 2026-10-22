@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db, {
+  PAYMENT_AMOUNT_SQL,
   insertChangeProof,
   getUnconsumedChangeProofs,
   markChangeProofsConsumed,
@@ -32,13 +33,13 @@ withdrawRoutes.post('/quote', async (c) => {
     const tokens = db
       .prepare(
         `
-      SELECT p.seller_token, s.price_sats
+      SELECT p.seller_token, ${PAYMENT_AMOUNT_SQL} AS amount_sats
       FROM payments p
       JOIN stashes s ON p.stash_id = s.id
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
     `
       )
-      .all(pubkey) as Array<{ seller_token: string; price_sats: number }>;
+      .all(pubkey) as Array<{ seller_token: string; amount_sats: number }>;
 
     // Include unconsumed change proofs in balance
     const changeProofs = getUnconsumedChangeProofs(pubkey);
@@ -51,7 +52,7 @@ withdrawRoutes.post('/quote', async (c) => {
       );
     }
 
-    const totalSats = tokens.reduce((sum, t) => sum + t.price_sats, 0) + changeSatsTotal;
+    const totalSats = tokens.reduce((sum, t) => sum + t.amount_sats, 0) + changeSatsTotal;
 
     // Get fee estimate from mint
     const quoteResult = await getMeltQuote(body.invoice);
@@ -97,7 +98,7 @@ withdrawRoutes.post('/execute', async (c) => {
     const tokenRows = db
       .prepare(
         `
-      SELECT p.id as payment_id, p.seller_token, s.price_sats
+      SELECT p.id as payment_id, p.seller_token, ${PAYMENT_AMOUNT_SQL} AS amount_sats
       FROM payments p
       JOIN stashes s ON p.stash_id = s.id
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
@@ -106,7 +107,7 @@ withdrawRoutes.post('/execute', async (c) => {
       .all(pubkey) as Array<{
       payment_id: string;
       seller_token: string;
-      price_sats: number;
+      amount_sats: number;
     }>;
 
     // Include unconsumed change proofs
@@ -125,7 +126,7 @@ withdrawRoutes.post('/execute', async (c) => {
     const paymentIds = tokenRows.map((r) => r.payment_id);
     const changeProofIds = changeProofs.map((cp) => cp.id);
     const totalSats =
-      tokenRows.reduce((sum, r) => sum + r.price_sats, 0) +
+      tokenRows.reduce((sum, r) => sum + r.amount_sats, 0) +
       changeProofs.reduce((sum, cp) => sum + cp.amount_sats, 0);
 
     // Melt all tokens (payments + change proofs) to Lightning

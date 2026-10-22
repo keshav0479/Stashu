@@ -166,6 +166,13 @@ describe('buildCardDescription', () => {
       '2,000 sats · 45.2 MB — Pay with Lightning or Cashu to unlock.'
     );
   });
+
+  it('marks a pay-what-you-want price as a floor', () => {
+    assert.equal(
+      buildCardDescription(stash({ payWhatYouWant: true })),
+      'From 2,000 sats · 45.2 MB · MP4 — Pay with Lightning or Cashu to unlock.'
+    );
+  });
 });
 
 const RENDERED_CARD: ShareCardImage = {

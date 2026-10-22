@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import db from '../db/index.js';
+import db, { PAYMENT_AMOUNT_SQL } from '../db/index.js';
 import { decrypt } from '../lib/encryption.js';
 import type { AuthVariables } from '../middleware/auth.js';
 import type {
@@ -20,10 +20,11 @@ dashboardRoutes.get('/:pubkey', async (c) => {
         s.id,
         s.title,
         s.price_sats,
+        s.pay_what_you_want,
         s.created_at,
         s.show_in_storefront,
         COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as unlock_count,
-        COALESCE(SUM(CASE WHEN p.status = 'paid' THEN s.price_sats ELSE 0 END), 0) as total_earned
+        COALESCE(SUM(CASE WHEN p.status = 'paid' THEN ${PAYMENT_AMOUNT_SQL} ELSE 0 END), 0) as total_earned
       FROM stashes s
       LEFT JOIN payments p ON s.id = p.stash_id
       WHERE s.seller_pubkey = ?
@@ -35,6 +36,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
       id: string;
       title: string;
       price_sats: number;
+      pay_what_you_want: number;
       created_at: number;
       show_in_storefront: number;
       unlock_count: number;
@@ -45,6 +47,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
       id: row.id,
       title: decrypt(row.title),
       priceSats: row.price_sats,
+      payWhatYouWant: row.pay_what_you_want === 1,
       unlockCount: row.unlock_count,
       totalEarned: row.total_earned,
       createdAt: row.created_at,
@@ -52,7 +55,7 @@ dashboardRoutes.get('/:pubkey', async (c) => {
     }));
 
     const tokensStmt = db.prepare(`
-      SELECT p.seller_token, s.price_sats
+      SELECT p.seller_token, ${PAYMENT_AMOUNT_SQL} AS amount_sats
       FROM payments p
       JOIN stashes s ON p.stash_id = s.id
       WHERE s.seller_pubkey = ? AND p.status = 'paid' AND p.seller_token IS NOT NULL AND p.claimed = 0
@@ -60,11 +63,11 @@ dashboardRoutes.get('/:pubkey', async (c) => {
 
     const tokenRows = tokensStmt.all(pubkey) as Array<{
       seller_token: string;
-      price_sats: number;
+      amount_sats: number;
     }>;
 
     const tokens = tokenRows.map((r) => decrypt(r.seller_token));
-    const totalSats = tokenRows.reduce((sum, r) => sum + r.price_sats, 0);
+    const totalSats = tokenRows.reduce((sum, r) => sum + r.amount_sats, 0);
 
     const settingsRow = db
       .prepare('SELECT storefront_enabled FROM seller_settings WHERE pubkey = ?')

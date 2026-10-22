@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { createHash, randomBytes } from 'crypto';
 import db from '../db/index.js';
-import { getTokenValuation, verifyAndSwapToken } from '../lib/cashu.js';
+import { getMaxMintAmount, getTokenValuation, verifyAndSwapToken } from '../lib/cashu.js';
 import { encrypt, decrypt } from '../lib/encryption.js';
 import { tryAutoSettle } from '../lib/autosettle.js';
+import { resolvePaymentAmount } from '../lib/pricing.js';
 import { rateLimit } from '../middleware/ratelimit.js';
 import type {
   StashProofSecret,
@@ -38,7 +39,8 @@ unlockRoutes.post('/:id', async (c) => {
 
     // Get stash details
     const stashStmt = db.prepare(`
-      SELECT id, blob_url, blob_sha256, secret_key, preview_secret, file_name, price_sats, seller_pubkey, download_window_seconds
+      SELECT id, blob_url, blob_sha256, secret_key, preview_secret, file_name, price_sats,
+             pay_what_you_want, seller_pubkey, download_window_seconds
       FROM stashes WHERE id = ?
     `);
     const stash = stashStmt.get(stashId) as Pick<
@@ -50,6 +52,7 @@ unlockRoutes.post('/:id', async (c) => {
       | 'preview_secret'
       | 'file_name'
       | 'price_sats'
+      | 'pay_what_you_want'
       | 'seller_pubkey'
       | 'download_window_seconds'
     > | null;
@@ -128,38 +131,54 @@ unlockRoutes.post('/:id', async (c) => {
       }
     }
 
-    // Reject tokens that would not credit exactly the price before any swap:
+    // The price, or for pay-what-you-want the amount the buyer chose.
+    const payWhatYouWant = stash.pay_what_you_want === 1;
+    const amount = resolvePaymentAmount(
+      stash,
+      body.amountSats,
+      payWhatYouWant ? await getMaxMintAmount() : null
+    );
+    if (!amount.ok) {
+      return c.json<APIResponse<never>>({ success: false, error: amount.error }, 400);
+    }
+    const amountSats = amount.amountSats;
+
+    // Reject tokens that would not credit exactly that amount before any swap:
     // overpayment is swept to the seller in full with no change path back to
-    // the buyer, and a token netting less than the price after mint input fees
-    // (NUT-02) would credit less than the recorded earnings and break withdrawal.
+    // the buyer — which is why pay-what-you-want asks the buyer to name the
+    // amount rather than accepting any token above the minimum — and a token
+    // netting less after mint input fees (NUT-02) would credit less than the
+    // recorded earnings and break withdrawal.
     const valuation = await getTokenValuation(body.token);
     if (!valuation) {
       return c.json<APIResponse<never>>({ success: false, error: 'Invalid Cashu token' }, 400);
     }
-    if (valuation.receivableSats !== stash.price_sats) {
+    if (valuation.receivableSats !== amountSats) {
       const feeSats = valuation.valueSats - valuation.receivableSats;
+      const target = payWhatYouWant ? 'you chose to pay' : 'the price is';
+      const Target = payWhatYouWant ? 'You chose to pay' : 'The price is';
       return c.json<APIResponse<never>>(
         {
           success: false,
           error:
             feeSats > 0
-              ? `Token is worth ${valuation.valueSats} sats but credits ${valuation.receivableSats} after the mint's ${feeSats}-sat receive fee. The price is ${stash.price_sats}, send ${stash.price_sats} sats plus the fee.`
-              : `Token is worth ${valuation.valueSats} sats but the price is ${stash.price_sats}. Send exactly ${stash.price_sats} sats.`,
+              ? `Token is worth ${valuation.valueSats} sats but credits ${valuation.receivableSats} after the mint's ${feeSats}-sat receive fee. ${Target} ${amountSats}, send ${amountSats} sats plus the fee.`
+              : `Token is worth ${valuation.valueSats} sats but ${target} ${amountSats}. Send exactly ${amountSats} sats.`,
         },
         400
       );
     }
 
-    // Create pending payment record
+    // Create pending payment record, with the amount it will credit
     db.prepare(
       `
-      INSERT INTO payments (id, stash_id, status, token_hash)
-      VALUES (?, ?, 'pending', ?)
+      INSERT INTO payments (id, stash_id, status, token_hash, amount_sats)
+      VALUES (?, ?, 'pending', ?, ?)
     `
-    ).run(paymentId, stashId, tokenHash);
+    ).run(paymentId, stashId, tokenHash, amountSats);
 
     // Verify and swap the token
-    const swapResult = await verifyAndSwapToken(body.token, stash.price_sats);
+    const swapResult = await verifyAndSwapToken(body.token, amountSats);
 
     if (!swapResult.success) {
       // Mark payment as failed
