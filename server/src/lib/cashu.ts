@@ -382,6 +382,21 @@ export async function checkPaymentStatus(
 }
 
 /**
+ * Check a mint quote's state and when its invoice stops being payable — used by
+ * recovery to tell a paid quote nobody collected from an abandoned one.
+ * `state` is NUT-23's UNPAID, PAID or ISSUED; `expiresAt` is null when the mint
+ * gives no expiry.
+ */
+export async function checkMintQuoteStatus(
+  quoteId: string
+): Promise<{ state: string; expiresAt: number | null }> {
+  const w = await getWallet();
+  const quote = await w.checkMintQuoteBolt11(quoteId);
+  // Typed as a number, but cashu-ts passes through a mint's null
+  return { state: quote.state, expiresAt: quote.expiry ?? null };
+}
+
+/**
  * Mint new Cashu tokens after a Lightning invoice has been paid
  * @param amountSats Amount that was paid
  * @param quoteId The quote ID from createPaymentInvoice
