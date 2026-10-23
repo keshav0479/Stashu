@@ -34,7 +34,6 @@ mock.module('../lib/cashu.js', {
       expiresAt: Math.floor(Date.now() / 1000) + 600,
     }),
     getWallet: async () => ({}),
-    getTokenValue: () => 100,
     getTokenValuation: async () => ({ valueSats: 100, receivableSats: 100 }),
     getMeltQuote: async () => ({ success: true }),
     meltWithRecovery: async () => ({}),

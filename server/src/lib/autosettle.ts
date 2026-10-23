@@ -4,7 +4,7 @@ import db, {
   markChangeProofsConsumed,
 } from '../db/index.js';
 import { resolveAddress } from './lnaddress.js';
-import { meltWithRecovery, getMeltQuote, getTokenValue } from './cashu.js';
+import { meltWithRecovery, getMeltQuote } from './cashu.js';
 import { decrypt, encrypt } from './encryption.js';
 
 interface SettingsRow {
@@ -173,15 +173,20 @@ export async function tryAutoSettle(sellerPubkey: string): Promise<void> {
       markChangeProofsConsumed(changeProofs.map((cp) => cp.id));
     }
 
-    // Persist change proofs if the mint returned excess sats
-    if (meltResult.changeToken) {
-      const changeSats = getTokenValue(meltResult.changeToken);
-      if (changeSats > 0) {
-        insertChangeProof(sellerPubkey, encrypt(meltResult.changeToken), changeSats, 'auto_settle');
-        console.log(
-          `💰 Auto-settle: persisted ${changeSats} sats of change proofs for ${sellerPubkey.substring(0, 8)}...`
-        );
-      }
+    // Persist change proofs if the mint returned excess sats. The value comes
+    // from the melt itself — re-decoding here could mis-value real change to 0
+    // and silently drop it.
+    const meltChangeSats = meltResult.changeSats ?? 0;
+    if (meltResult.changeToken && meltChangeSats > 0) {
+      insertChangeProof(
+        sellerPubkey,
+        encrypt(meltResult.changeToken),
+        meltChangeSats,
+        'auto_settle'
+      );
+      console.log(
+        `💰 Auto-settle: persisted ${meltChangeSats} sats of change proofs for ${sellerPubkey.substring(0, 8)}...`
+      );
     }
 
     // 7. Log success

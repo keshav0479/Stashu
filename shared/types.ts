@@ -188,7 +188,15 @@ export const ALLOWED_DOWNLOAD_WINDOW_SECONDS: ReadonlySet<number> = new Set(
 // Payment Types
 // ============================================
 
-export type PaymentStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'mint_failed';
+// 'mint_lost': payment received, but the mint already issued this quote's ecash
+// to a caller that lost it — terminal, unrecoverable, needs manual follow-up.
+export type PaymentStatus =
+  | 'pending'
+  | 'processing'
+  | 'paid'
+  | 'failed'
+  | 'mint_failed'
+  | 'mint_lost';
 
 export interface Payment {
   id: string;

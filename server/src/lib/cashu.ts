@@ -19,6 +19,11 @@ setGlobalRequestOptions({ requestTimeout: CASHU_REQUEST_TIMEOUT_MS });
 
 let wallet: Wallet | null = null;
 let walletLoading: Promise<Wallet> | null = null;
+// A short id that stays unmappable after a fresh load is a bad token, not a
+// rotation. This bounds how often the public token endpoints can evict the
+// process wallet, since decoding runs before any idempotency record exists.
+let lastKeysetReloadAt = 0;
+const KEYSET_RELOAD_COOLDOWN_MS = 60_000;
 
 async function getWallet(): Promise<Wallet> {
   if (wallet) return wallet;
@@ -37,6 +42,56 @@ async function getWallet(): Promise<Wallet> {
   }
 
   return walletLoading;
+}
+
+// Only a genuinely unmappable short id can be fixed by reloading keysets. An
+// ambiguous id or an unknown version byte is a permanent property of the token
+// (cashu-ts message text, pinned) — reloading those would just burn mint calls.
+export function isStaleKeysetError(error: unknown): boolean {
+  return error instanceof Error && /map short keyset id/i.test(error.message);
+}
+
+/**
+ * The buyer's payment was received but the mint already issued the ecash for
+ * this quote to a caller that lost it. Retrying can never succeed.
+ */
+export function isQuoteAlreadyIssued(error: unknown): boolean {
+  const code = (error as { code?: number }).code;
+  return code === 20002 || (error instanceof Error && /already issued/i.test(error.message));
+}
+
+/**
+ * Discard a stale wallet and load a fresh one, but at most once per cooldown so
+ * a stream of unmappable tokens cannot evict the process wallet on every
+ * request. Returns the stale wallet unchanged when a reload is not warranted.
+ */
+async function refreshWallet(stale: Wallet): Promise<Wallet> {
+  // Another caller already replaced the wallet we used — take theirs.
+  if (wallet && wallet !== stale) return wallet;
+  // A reload is already in flight — join it instead of starting a second.
+  if (walletLoading) return walletLoading;
+  if (Date.now() - lastKeysetReloadAt < KEYSET_RELOAD_COOLDOWN_MS) return stale;
+  lastKeysetReloadAt = Date.now();
+  wallet = null;
+  return getWallet();
+}
+
+/**
+ * Decode a token with wallet keyset context so short keyset ids resolve. On a
+ * genuinely-unmappable id the mint is reloaded once (cooldown-bounded) so a
+ * keyset rotation cannot strand a long-running process. Decoding is read-only,
+ * which is what makes the retry safe.
+ */
+async function decodeTokenSafe(tokenString: string): Promise<{ proofs: Proof[]; mint: string }> {
+  const w = await getWallet();
+  try {
+    return w.decodeToken(tokenString);
+  } catch (error) {
+    if (!isStaleKeysetError(error)) throw error;
+    const fresh = await refreshWallet(w);
+    if (fresh === w) throw error; // no reload happened (cooldown or already-fresh)
+    return fresh.decodeToken(tokenString);
+  }
 }
 
 export interface SwapResult {
@@ -58,6 +113,9 @@ export interface MeltResult {
   preimage?: string;
   feeSats?: number;
   changeToken?: string; //(excess sats returned by mint)
+  // Computed from the mint's change proofs at melt time, so callers never
+  // re-decode the change token (and can never mis-value it to zero)
+  changeSats?: number;
   error?: string;
 }
 
@@ -79,9 +137,10 @@ export async function verifyAndSwapToken(
   expectedSats: number
 ): Promise<SwapResult> {
   try {
-    // Decode with wallet keyset context so short keyset ids (v4) resolve
+    // Decode with wallet keyset context so short keyset ids resolve; reloads
+    // the mint once if the cached wallet predates a keyset rotation
+    const proofs = getProofsFromToken(await decodeTokenSafe(tokenString));
     const w = await getWallet();
-    const proofs = getProofsFromToken(w.decodeToken(tokenString));
     const totalValue = proofs.reduce((sum, proof) => sum + proof.amount, 0);
 
     // Exact-amount check with the same wallet snapshot receive() uses for its
@@ -141,8 +200,12 @@ export async function getTokenValuation(tokenString: string): Promise<TokenValua
 
   let proofs: Proof[];
   try {
-    // Wallet decode maps short keyset ids (v4); raw decode is the offline fallback
-    proofs = getProofsFromToken(w ? w.decodeToken(tokenString) : getDecodedToken(tokenString));
+    // Wallet decode maps short keyset ids; raw decode is the offline fallback
+    proofs = getProofsFromToken(
+      w ? await decodeTokenSafe(tokenString) : getDecodedToken(tokenString)
+    );
+    // The decode may have refreshed the wallet; fee math must use the same one
+    w = w ? await getWallet() : w;
   } catch {
     return null;
   }
@@ -156,19 +219,6 @@ export async function getTokenValuation(tokenString: string): Promise<TokenValua
     }
   }
   return { valueSats, receivableSats: valueSats };
-}
-
-/**
- * Get the total value of a Cashu token
- */
-export function getTokenValue(tokenString: string): number {
-  try {
-    const decoded = getDecodedToken(tokenString);
-    const proofs = getProofsFromToken(decoded);
-    return proofs.reduce((sum, proof) => sum + proof.amount, 0);
-  } catch {
-    return 0;
-  }
 }
 
 /**
@@ -210,15 +260,15 @@ export async function meltWithRecovery(
   sellerPubkey: string
 ): Promise<MeltResult> {
   try {
-    const w = await getWallet();
-
-    // Extract proofs directly from tokens (they are already valid proofs on this mint)
+    // Extract proofs from stored tokens with keyset context, so short keyset
+    // ids resolve even when the tokens were minted under a rotated keyset
     const allProofs: Proof[] = [];
     for (const token of tokens) {
-      const decoded = getDecodedToken(token);
+      const decoded = await decodeTokenSafe(token);
       const proofs = getProofsFromToken(decoded);
       allProofs.push(...proofs);
     }
+    const w = await getWallet();
 
     const totalValue = allProofs.reduce((sum: number, p) => sum + p.amount, 0);
 
@@ -252,8 +302,9 @@ export async function meltWithRecovery(
 
       // Encode change proofs if the mint returned excess sats
       let changeToken: string | undefined;
+      let changeSats = 0;
       if (result.change && result.change.length > 0) {
-        const changeSats = result.change.reduce((sum: number, p) => sum + p.amount, 0);
+        changeSats = result.change.reduce((sum: number, p) => sum + p.amount, 0);
         if (changeSats > 0) {
           changeToken = getEncodedTokenV4({ mint: MINT_URL, proofs: result.change });
           console.log(`💰 Change proofs recovered: ${changeSats} sats`);
@@ -265,6 +316,7 @@ export async function meltWithRecovery(
         preimage: result.quote.payment_preimage || '',
         feeSats: quote.fee_reserve,
         changeToken,
+        changeSats,
       };
     } else {
       // Payment didn't succeed — mark failed so recovery doesn't retry endlessly
