@@ -77,6 +77,24 @@ async function refreshWallet(stale: Wallet): Promise<Wallet> {
 }
 
 /**
+ * Run a mint call that sends new outputs. After a keyset rotation the cached
+ * wallet still builds outputs on the retired keyset and the mint answers 12002
+ * (Inactive Keyset). The mint checks outputs before it signs, spends or pays
+ * anything, so reloading the wallet and retrying once is safe. The mint itself
+ * says the keyset is retired, so this skips the decode path's cooldown.
+ */
+async function withActiveKeyset<T>(op: (w: Wallet) => Promise<T>): Promise<T> {
+  const w = await getWallet();
+  try {
+    return await op(w);
+  } catch (error) {
+    if ((error as { code?: number }).code !== 12002) throw error;
+    if (wallet === w) wallet = null;
+    return op(await getWallet());
+  }
+}
+
+/**
  * Decode a token with wallet keyset context so short keyset ids resolve. On a
  * genuinely-unmappable id the mint is reloaded once (cooldown-bounded) so a
  * keyset rotation cannot strand a long-running process. Decoding is read-only,
@@ -157,7 +175,7 @@ export async function verifyAndSwapToken(
       };
     }
 
-    const newProofs = await w.receive(tokenString);
+    const newProofs = await withActiveKeyset((w) => w.receive(tokenString));
 
     // Encode the new proofs as a token for the seller (v4 format)
     const sellerToken = getEncodedTokenV4({
@@ -292,7 +310,7 @@ export async function meltWithRecovery(
     ).run(sellerPubkey, quote.quote, encrypt(JSON.stringify(allProofs)), invoice, totalValue);
 
     // Execute melt (pay the invoice)
-    const result = await w.meltProofs(quote, allProofs);
+    const result = await withActiveKeyset((w) => w.meltProofs(quote, allProofs));
 
     if (result.quote.state === 'PAID') {
       // Mark pending melt as completed
@@ -403,8 +421,7 @@ export async function checkMintQuoteStatus(
  * @returns Encoded Cashu token
  */
 export async function mintAfterPayment(amountSats: number, quoteId: string): Promise<string> {
-  const w = await getWallet();
-  const proofs = await w.mintProofs(amountSats, quoteId);
+  const proofs = await withActiveKeyset((w) => w.mintProofs(amountSats, quoteId));
 
   return getEncodedTokenV4({
     mint: MINT_URL,

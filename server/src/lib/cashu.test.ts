@@ -287,6 +287,88 @@ describe('v2 keyset handling (mint rotation)', () => {
   });
 });
 
+describe('inactive keyset after rotation', () => {
+  const oldPair = createNewMintKeys(5, undefined, { versionByte: 0 });
+  const newPair = createNewMintKeys(5, undefined, { versionByte: 0 });
+  const keysHexOf = (pair: typeof oldPair) =>
+    Object.fromEntries(
+      Object.entries(pair.pubKeys).map(([amount, key]) => [
+        amount,
+        Buffer.from(key).toString('hex'),
+      ])
+    );
+  const keysets = (active: typeof oldPair) =>
+    [oldPair, newPair].map((p) => ({ id: p.keysetId, unit: 'sat', active: p === active }));
+
+  it('meltWithRecovery reloads the wallet and retries once when the mint retired its keyset', async () => {
+    let active = oldPair;
+    const meltOutputIds: string[][] = [];
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const quote = { quote: 'melt-rot', amount: 8, fee_reserve: 2, unit: 'sat', expiry: null };
+      if (url.endsWith('/v1/melt/quote/bolt11')) return json({ ...quote, state: 'UNPAID' });
+      if (url.endsWith('/v1/melt/bolt11')) {
+        const ids = JSON.parse(String(init?.body)).outputs.map((o: { id: string }) => o.id);
+        meltOutputIds.push(ids);
+        // cdk rejects outputs on a retired keyset before touching any state
+        if (ids.some((id: string) => id !== active.keysetId)) {
+          return json({ detail: 'Inactive Keyset', code: 12002 }, 400);
+        }
+        return json({ ...quote, state: 'PAID', payment_preimage: 'ab'.repeat(32), change: [] });
+      }
+      if (url.endsWith('/v1/keysets')) return json({ keysets: keysets(active) });
+      if (url.endsWith('/v1/keys')) {
+        return json({
+          keysets: [oldPair, newPair].map((p) => ({
+            id: p.keysetId,
+            unit: 'sat',
+            keys: keysHexOf(p),
+          })),
+        });
+      }
+      if (url.endsWith('/v1/info')) {
+        return json({
+          name: 'test-mint',
+          pubkey: keysHexOf(newPair)['1'],
+          version: 'test/1.0',
+          nuts: { '5': { methods: [{ method: 'bolt11', unit: 'sat' }], disabled: false } },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+    try {
+      const { getMeltQuote, meltWithRecovery } = await import('./cashu.js');
+      // Make sure a wallet is cached before the mint rotates
+      await getMeltQuote('lnbc-rot');
+      active = newPair;
+
+      const token = getEncodedTokenV4({
+        mint: 'https://mint.test',
+        proofs: [8, 2].map((amount) => ({
+          id: oldPair.keysetId,
+          amount,
+          secret: `rot-secret-${amount}`,
+          C: '02' + 'f'.repeat(64),
+        })),
+      });
+      const result = await meltWithRecovery([token], 'lnbc-rot', 'seller-rot');
+
+      assert.equal(result.success, true, result.error);
+      assert.equal(meltOutputIds.length, 2, 'one rejected melt, one retry');
+      assert.ok(meltOutputIds[1].every((id) => id === newPair.keysetId));
+    } finally {
+      globalThis.fetch = originalFetch;
+      setGlobalRequestOptions({});
+    }
+  });
+});
+
 describe('mint quote status', () => {
   // Fake mint answering NUT-23 quote checks. Its keys only matter when these
   // tests run on their own, before another test has loaded the wallet.
